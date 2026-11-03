@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/fx_settings.dart';
 import '../models/youtube_models.dart';
 import '../services/youtube_service.dart';
@@ -226,9 +227,30 @@ class MediaFxProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> requestBluetoothPermissions() async {
+    try {
+      await [
+        Permission.bluetooth,
+        Permission.bluetoothConnect,
+        Permission.bluetoothScan,
+        Permission.bluetoothAdvertise,
+      ].request();
+      await _systemFx.requestBluetoothPermissions();
+    } catch (_) {}
+  }
+
+  Future<void> enableBluetooth() async {
+    await _systemFx.enableBluetooth();
+    await refreshBluetoothStatus();
+    notifyListeners();
+  }
+
   Future<void> toggleBluetoothReceiver(bool enable, {int duration = 300}) async {
     _isBtReceiverMode = enable;
+    notifyListeners();
+
     if (enable) {
+      await requestBluetoothPermissions();
       await _systemFx.startBluetoothReceiverMode(duration: duration);
     } else {
       await _systemFx.stopBluetoothReceiverMode();
@@ -238,6 +260,7 @@ class MediaFxProvider extends ChangeNotifier {
   }
 
   Future<void> requestBluetoothDiscoverable({int duration = 300}) async {
+    await requestBluetoothPermissions();
     await _systemFx.requestBluetoothDiscoverable(duration: duration);
     await refreshBluetoothStatus();
     notifyListeners();

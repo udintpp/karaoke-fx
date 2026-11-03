@@ -260,4 +260,16 @@ class SystemAudioFxService {
       await _channel.invokeMethod('requestDiscoverable', {'duration': duration});
     } catch (_) {}
   }
+
+  Future<void> enableBluetooth() async {
+    try {
+      await _channel.invokeMethod('enableBluetooth');
+    } catch (_) {}
+  }
+
+  Future<void> requestBluetoothPermissions() async {
+    try {
+      await _channel.invokeMethod('requestBluetoothPermissions');
+    } catch (_) {}
+  }
 }

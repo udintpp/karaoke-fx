@@ -450,6 +450,50 @@ class MediaFxScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
+          // Warning if Bluetooth is OFF
+          if (!media.isBluetoothEnabled) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppTheme.warning.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.warning.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.bluetooth_disabled_rounded,
+                      color: AppTheme.warning, size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Bluetooth HP Anda sedang nonaktif.',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: media.enableBluetooth,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.warning,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Nyalakan',
+                        style: TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           // ─── SECTION 1: MODE PENERIMA AUDIO (BLUETOOTH SINK) ─────────────
           Container(
             padding: const EdgeInsets.all(12),

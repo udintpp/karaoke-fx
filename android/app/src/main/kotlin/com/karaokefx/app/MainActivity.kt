@@ -16,8 +16,10 @@ import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import androidx.core.app.ActivityCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -299,10 +301,51 @@ class MainActivity : FlutterActivity() {
                 }
 
                 // ─── Bluetooth Audio Receiver (A2DP Sink) Methods ──────────
+                "requestBluetoothPermissions" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        val permissions = arrayOf(
+                            android.Manifest.permission.BLUETOOTH_CONNECT,
+                            android.Manifest.permission.BLUETOOTH_SCAN,
+                            android.Manifest.permission.BLUETOOTH_ADVERTISE
+                        )
+                        val missing = permissions.filter {
+                            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+                        }
+                        if (missing.isNotEmpty()) {
+                            ActivityCompat.requestPermissions(this, missing.toTypedArray(), 1002)
+                        }
+                    }
+                    result.success(true)
+                }
+                "enableBluetooth" -> {
+                    try {
+                        val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(enableBtIntent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("ENABLE_BT_ERROR", e.message, null)
+                    }
+                }
                 "startBluetoothReceiverMode" -> {
                     val duration = call.argument<Int>("duration") ?: 300
                     prefs.edit().putBoolean("bt_receiver_enabled", true).apply()
                     initSystemAudioFx()
+
+                    // Check if Bluetooth is enabled; if not, prompt user
+                    try {
+                        val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+                        val adapter = btManager?.adapter
+                        if (adapter != null && !adapter.isEnabled) {
+                            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(enableBtIntent)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
 
                     // Ensure background service is running so stream doesn't drop when screen turns off
                     try {
@@ -329,6 +372,7 @@ class MainActivity : FlutterActivity() {
                         e.printStackTrace()
                     }
 
+                    initBluetoothSink()
                     result.success(true)
                 }
                 "stopBluetoothReceiverMode" -> {
@@ -349,20 +393,41 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "getBluetoothReceiverStatus" -> {
-                    val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-                    val adapter = btManager?.adapter
-                    updateConnectedSenderDevice()
-                    val isDiscoverable = (adapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE)
-                    result.success(mapOf(
-                        "isReceiverEnabled" to prefs.getBoolean("bt_receiver_enabled", false),
-                        "isBluetoothEnabled" to (adapter?.isEnabled ?: false),
-                        "isDiscoverable" to isDiscoverable,
-                        "localDeviceName" to (adapter?.name ?: "Android Karaoke Device"),
-                        "connectedSenderName" to connectedSenderDeviceName,
-                        "connectedSenderAddress" to connectedSenderDeviceAddress,
-                        "isPlayingMusic" to isBtReceiverStreaming,
-                        "isSinkSupported" to (a2dpSinkProxy != null)
-                    ))
+                    try {
+                        val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+                        val adapter = btManager?.adapter
+                        val isBtEnabled = try { adapter?.isEnabled ?: false } catch (_: Exception) { false }
+                        val isDiscoverable = try {
+                            adapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE
+                        } catch (_: Exception) { false }
+                        val localName = try {
+                            adapter?.name ?: "Android Karaoke Device"
+                        } catch (_: Exception) { "Android Karaoke Device" }
+
+                        try { updateConnectedSenderDevice() } catch (_: Exception) {}
+
+                        result.success(mapOf(
+                            "isReceiverEnabled" to prefs.getBoolean("bt_receiver_enabled", false),
+                            "isBluetoothEnabled" to isBtEnabled,
+                            "isDiscoverable" to isDiscoverable,
+                            "localDeviceName" to localName,
+                            "connectedSenderName" to connectedSenderDeviceName,
+                            "connectedSenderAddress" to connectedSenderDeviceAddress,
+                            "isPlayingMusic" to isBtReceiverStreaming,
+                            "isSinkSupported" to (a2dpSinkProxy != null)
+                        ))
+                    } catch (e: Exception) {
+                        result.success(mapOf(
+                            "isReceiverEnabled" to prefs.getBoolean("bt_receiver_enabled", false),
+                            "isBluetoothEnabled" to false,
+                            "isDiscoverable" to false,
+                            "localDeviceName" to "Android Karaoke Device",
+                            "connectedSenderName" to "",
+                            "connectedSenderAddress" to "",
+                            "isPlayingMusic" to false,
+                            "isSinkSupported" to false
+                        ))
+                    }
                 }
                 else -> result.notImplemented()
             }
@@ -535,7 +600,15 @@ class MainActivity : FlutterActivity() {
             addAction("android.bluetooth.a2dp-sink.profile.action.CONNECTION_STATE_CHANGED")
             addAction("android.bluetooth.a2dp-sink.profile.action.PLAYING_STATE_CHANGED")
         }
-        registerReceiver(bluetoothReceiver, filter)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                registerReceiver(bluetoothReceiver, filter)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun updateConnectedSenderDevice() {
