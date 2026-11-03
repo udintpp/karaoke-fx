@@ -112,6 +112,9 @@ class RealtimeMicEngine private constructor() {
     // Pitch / Robot oscillator phase
     private var robotPhase = 0.0
 
+    // AudioManager reference — injected by MainActivity so we can set audio mode
+    var audioManager: AudioManager? = null
+
     @Synchronized
     fun start(): Boolean {
         if (isRunning) return true
@@ -124,8 +127,10 @@ class RealtimeMicEngine private constructor() {
             )
             val recBufSize = max(minRecBuf, CHUNK_SIZE * 4)
 
+            // VOICE_COMMUNICATION: Android routes the AEC hardware reference signal correctly
+            // so music playing simultaneously is NOT picked up by the mic.
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -133,17 +138,39 @@ class RealtimeMicEngine private constructor() {
             )
 
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord initialization failed!")
-                stop()
-                return false
+                // Fallback to plain MIC if VOICE_COMMUNICATION fails on this device
+                Log.w(TAG, "VOICE_COMMUNICATION source failed, falling back to MIC")
+                audioRecord?.release()
+                audioRecord = AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    recBufSize
+                )
+                if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                    Log.e(TAG, "AudioRecord initialization failed!")
+                    stop()
+                    return false
+                }
             }
 
-            // Attach hardware acoustic echo cancellation and noise suppression if supported
+            // Set audio mode so Android hardware AEC gets the speaker output as reference signal.
+            // MODE_IN_COMMUNICATION tells the audio HAL: "mic and speaker are active simultaneously,
+            // please suppress the speaker signal from what the mic captures."
+            try {
+                audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not set MODE_IN_COMMUNICATION: ${e.message}")
+            }
+
+            // Attach hardware Acoustic Echo Canceler — works best with VOICE_COMMUNICATION source
             val sessionId = audioRecord?.audioSessionId ?: 0
             if (AcousticEchoCanceler.isAvailable()) {
                 try {
                     echoCanceler = AcousticEchoCanceler.create(sessionId)
                     echoCanceler?.enabled = true
+                    Log.i(TAG, "AcousticEchoCanceler enabled (session $sessionId)")
                 } catch (e: Exception) {
                     Log.w(TAG, "Could not enable AcousticEchoCanceler: ${e.message}")
                 }
@@ -165,8 +192,10 @@ class RealtimeMicEngine private constructor() {
             )
             val trackBufSize = max(minTrackBuf, CHUNK_SIZE * 4)
 
+            // USAGE_VOICE_COMMUNICATION pairs with VOICE_COMMUNICATION source so the audio HAL
+            // knows the exact playback path and can subtract it from the mic signal (AEC reference).
             val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
 
@@ -203,7 +232,7 @@ class RealtimeMicEngine private constructor() {
                 start()
             }
 
-            Log.i(TAG, "RealtimeMicEngine started successfully (SampleRate: $SAMPLE_RATE, Chunk: $CHUNK_SIZE)")
+            Log.i(TAG, "RealtimeMicEngine started (SampleRate: $SAMPLE_RATE, Chunk: $CHUNK_SIZE, AEC: ${echoCanceler?.enabled})")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Error starting RealtimeMicEngine: ${e.message}", e)

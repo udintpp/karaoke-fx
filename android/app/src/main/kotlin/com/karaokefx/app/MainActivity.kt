@@ -433,7 +433,9 @@ class MainActivity : FlutterActivity() {
                 // ─── Realtime Mic Pass-Through & DSP Methods ────────────────
                 "startRealtimeMic" -> {
                     try {
-                        val success = RealtimeMicEngine.getInstance().start()
+                        val engine = RealtimeMicEngine.getInstance()
+                        engine.audioManager = audioManager  // inject so engine can set MODE_IN_COMMUNICATION
+                        val success = engine.start()
                         result.success(success)
                     } catch (e: Exception) {
                         result.error("MIC_ERROR", e.message, null)
@@ -442,6 +444,7 @@ class MainActivity : FlutterActivity() {
                 "stopRealtimeMic" -> {
                     try {
                         RealtimeMicEngine.getInstance().stop()
+                        audioManager?.mode = AudioManager.MODE_NORMAL  // restore normal audio routing
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("MIC_ERROR", e.message, null)
