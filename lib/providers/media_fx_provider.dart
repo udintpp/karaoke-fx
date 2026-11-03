@@ -45,6 +45,14 @@ class MediaFxProvider extends ChangeNotifier {
   bool _backgroundServiceEnabled = false;
   bool _autoStartOnBoot = true;
 
+  // ─── Bluetooth Audio Receiver & Routing State ─────────────────────────────
+  bool _isBluetoothEnabled = false;
+  String _connectedBtSpeaker = '';
+  String _connectedBtMic = '';
+  bool _isBtMicEnabled = false;
+  bool _isBtSpeakerEnabled = true;
+  bool _isLowLatencyEnabled = false;
+
   // ─── Getters ────────────────────────────────────────────────────────────────
   MediaState get state => _state;
   MediaSource get source => _source;
@@ -81,6 +89,16 @@ class MediaFxProvider extends ChangeNotifier {
   bool get backgroundServiceEnabled => _backgroundServiceEnabled;
   bool get autoStartOnBoot => _autoStartOnBoot;
 
+  // Bluetooth Getters
+  bool get isBluetoothEnabled => _isBluetoothEnabled;
+  String get connectedBtSpeaker => _connectedBtSpeaker;
+  String get connectedBtMic => _connectedBtMic;
+  bool get isBtMicEnabled => _isBtMicEnabled;
+  bool get isBtSpeakerEnabled => _isBtSpeakerEnabled;
+  bool get isLowLatencyEnabled => _isLowLatencyEnabled;
+  bool get hasConnectedBtDevice =>
+      _connectedBtSpeaker.isNotEmpty || _connectedBtMic.isNotEmpty;
+
   double get progressValue {
     if (_duration.inMilliseconds == 0) return 0;
     return (_position.inMilliseconds / _duration.inMilliseconds).clamp(0, 1);
@@ -94,6 +112,7 @@ class MediaFxProvider extends ChangeNotifier {
 
   Future<void> initSystemAudioFx() async {
     await _systemFx.init();
+    await refreshBluetoothStatus();
 
     final vol = await _systemFx.getSystemVolume();
     _systemVolume = vol['current'] ?? 10;
@@ -164,6 +183,40 @@ class MediaFxProvider extends ChangeNotifier {
     _autoStartOnBoot = enable;
     await _systemFx.setAutoStartOnBoot(enable);
     notifyListeners();
+  }
+
+  // ─── Bluetooth Audio Receiver & Router Controls ───────────────────────────
+
+  Future<void> refreshBluetoothStatus() async {
+    final status = await _systemFx.getBluetoothAudioStatus();
+    _isBluetoothEnabled = status['isBluetoothEnabled'] ?? false;
+    _connectedBtSpeaker = status['connectedSpeaker'] ?? '';
+    _connectedBtMic = status['connectedMic'] ?? '';
+    _isBtMicEnabled = status['isScoOn'] ?? false;
+    _isLowLatencyEnabled = status['isLowLatencyOn'] ?? false;
+    notifyListeners();
+  }
+
+  Future<void> toggleBluetoothMic(bool enable) async {
+    _isBtMicEnabled = enable;
+    await _systemFx.setBluetoothMicEnabled(enable);
+    notifyListeners();
+  }
+
+  Future<void> toggleBluetoothSpeaker(bool enable) async {
+    _isBtSpeakerEnabled = enable;
+    await _systemFx.setBluetoothSpeakerEnabled(enable);
+    notifyListeners();
+  }
+
+  Future<void> toggleLowLatency(bool enable) async {
+    _isLowLatencyEnabled = enable;
+    await _systemFx.setLowLatencyMode(enable);
+    notifyListeners();
+  }
+
+  Future<void> openBluetoothSettings() async {
+    await _systemFx.openBluetoothSettings();
   }
 
   // ─── System Media FX Controls (Android Global Audio Session) ───────────────

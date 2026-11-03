@@ -179,4 +179,46 @@ class SystemAudioFxService {
       await _channel.invokeMethod('setLoudnessGain', {'gainMb': gainMb});
     } catch (_) {}
   }
+
+  // ─── Bluetooth Audio Receiver & Router Methods ─────────────────────────────
+
+  Future<Map<String, dynamic>> getBluetoothAudioStatus() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('getBluetoothAudioStatus');
+      if (res != null) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (_) {}
+    return {
+      'isBluetoothEnabled': false,
+      'connectedSpeaker': '',
+      'connectedMic': '',
+      'isScoOn': false,
+      'isLowLatencyOn': false,
+    };
+  }
+
+  Future<void> setBluetoothMicEnabled(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setBluetoothMicEnabled', {'enabled': enabled});
+    } catch (_) {}
+  }
+
+  Future<void> setBluetoothSpeakerEnabled(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setBluetoothSpeakerEnabled', {'enabled': enabled});
+    } catch (_) {}
+  }
+
+  Future<void> setLowLatencyMode(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setLowLatencyMode', {'enabled': enabled});
+    } catch (_) {}
+  }
+
+  Future<void> openBluetoothSettings() async {
+    try {
+      await _channel.invokeMethod('openBluetoothSettings');
+    } catch (_) {}
+  }
 }

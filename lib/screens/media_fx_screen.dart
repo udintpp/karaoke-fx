@@ -25,6 +25,10 @@ class MediaFxScreen extends StatelessWidget {
 
               // Background Service & Auto-Start on Boot Card
               _buildBackgroundAndBootCard(media),
+              const SizedBox(height: 14),
+
+              // Bluetooth Audio Receiver & Router Card
+              _buildBluetoothAudioCard(media),
               const SizedBox(height: 16),
 
               // System Media Volume (STREAM_MUSIC)
@@ -375,6 +379,251 @@ class MediaFxScreen extends StatelessWidget {
                 trackColor: WidgetStateProperty.resolveWith(
                   (s) => s.contains(WidgetState.selected)
                       ? AppTheme.accent.withOpacity(0.35)
+                      : AppTheme.cardLight,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBluetoothAudioCard(MediaFxProvider media) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: media.hasConnectedBtDevice
+              ? AppTheme.accent.withOpacity(0.4)
+              : AppTheme.cardLight,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bluetooth_audio_rounded,
+                  color: AppTheme.accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Bluetooth Audio Receiver & Routing',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                color: AppTheme.textSecondary,
+                tooltip: 'Refresh Perangkat',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: media.refreshBluetoothStatus,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Device status badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: media.hasConnectedBtDevice
+                  ? AppTheme.accent.withOpacity(0.12)
+                  : AppTheme.cardLight.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  media.hasConnectedBtDevice
+                      ? Icons.bluetooth_connected_rounded
+                      : Icons.bluetooth_disabled_rounded,
+                  color: media.hasConnectedBtDevice
+                      ? AppTheme.accent
+                      : AppTheme.textSecondary,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    media.hasConnectedBtDevice
+                        ? [
+                            if (media.connectedBtSpeaker.isNotEmpty)
+                              '🔊 ${media.connectedBtSpeaker}',
+                            if (media.connectedBtMic.isNotEmpty)
+                              '🎤 ${media.connectedBtMic}',
+                          ].join(' | ')
+                        : 'Belum ada perangkat Bluetooth terhubung',
+                    style: TextStyle(
+                      color: media.hasConnectedBtDevice
+                          ? AppTheme.textPrimary
+                          : AppTheme.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: media.openBluetoothSettings,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppTheme.accent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'Pengaturan',
+                      style: TextStyle(
+                        color: AppTheme.accent,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Toggle 1: Wireless Bluetooth Mic (SCO)
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Mic Wireless Bluetooth',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Gunakan mikrofon bluetooth eksternal untuk vokal karaoke.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: media.isBtMicEnabled,
+                onChanged: media.toggleBluetoothMic,
+                thumbColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.micColor
+                      : AppTheme.textSecondary,
+                ),
+                trackColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.micColor.withOpacity(0.35)
+                      : AppTheme.cardLight,
+                ),
+              ),
+            ],
+          ),
+
+          const Divider(color: AppTheme.cardLight, height: 14),
+
+          // Toggle 2: Output ke Speaker Bluetooth (A2DP)
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Output ke Speaker Bluetooth',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Alirkan suara musik & vokal ke speaker/soundbar bluetooth.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: media.isBtSpeakerEnabled,
+                onChanged: media.toggleBluetoothSpeaker,
+                thumbColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.accent
+                      : AppTheme.textSecondary,
+                ),
+                trackColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.accent.withOpacity(0.35)
+                      : AppTheme.cardLight,
+                ),
+              ),
+            ],
+          ),
+
+          const Divider(color: AppTheme.cardLight, height: 14),
+
+          // Toggle 3: Mode Low-Latency (Anti Delay Vokal)
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Mode Low Latency (Anti Delay)',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Kurangi jeda suara mikrofon saat terhubung ke perangkat Bluetooth.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: media.isLowLatencyEnabled,
+                onChanged: media.toggleLowLatency,
+                thumbColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.primary
+                      : AppTheme.textSecondary,
+                ),
+                trackColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.primary.withOpacity(0.35)
                       : AppTheme.cardLight,
                 ),
               ),

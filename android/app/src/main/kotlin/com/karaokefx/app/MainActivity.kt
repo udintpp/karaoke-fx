@@ -1,8 +1,10 @@
 package com.karaokefx.app
 
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.BassBoost
@@ -10,6 +12,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.os.Build
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -192,6 +195,92 @@ class MainActivity : FlutterActivity() {
                         result.error("FX_ERROR", e.message, null)
                     }
                 }
+
+                // ─── Bluetooth Audio Receiver & Router Methods ─────────────
+                "getBluetoothAudioStatus" -> {
+                    val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+                    val adapter = btManager?.adapter
+                    val isBtEnabled = adapter?.isEnabled ?: false
+                    var connectedSpeaker = ""
+                    var connectedMic = ""
+                    val isScoConnected = audioManager?.isBluetoothScoOn ?: false
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        val devices = audioManager?.getDevices(
+                            AudioManager.GET_DEVICES_OUTPUTS or AudioManager.GET_DEVICES_INPUTS
+                        ) ?: emptyArray()
+                        for (device in devices) {
+                            if (device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                            ) {
+                                if (device.isSink && connectedSpeaker.isEmpty()) {
+                                    connectedSpeaker = device.productName?.toString() ?: "Speaker Bluetooth"
+                                }
+                                if (device.isSource && connectedMic.isEmpty()) {
+                                    connectedMic = device.productName?.toString() ?: "Mic Wireless Bluetooth"
+                                }
+                            }
+                        }
+                    }
+
+                    result.success(mapOf(
+                        "isBluetoothEnabled" to isBtEnabled,
+                        "connectedSpeaker" to connectedSpeaker,
+                        "connectedMic" to connectedMic,
+                        "isScoOn" to isScoConnected,
+                        "isLowLatencyOn" to (audioManager?.mode == AudioManager.MODE_IN_COMMUNICATION)
+                    ))
+                }
+                "setBluetoothMicEnabled" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    try {
+                        if (enabled) {
+                            audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
+                            audioManager?.startBluetoothSco()
+                            audioManager?.isBluetoothScoOn = true
+                        } else {
+                            audioManager?.stopBluetoothSco()
+                            audioManager?.isBluetoothScoOn = false
+                            audioManager?.mode = AudioManager.MODE_NORMAL
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("BT_ERROR", e.message, null)
+                    }
+                }
+                "setBluetoothSpeakerEnabled" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    try {
+                        audioManager?.isSpeakerphoneOn = !enabled
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("BT_ERROR", e.message, null)
+                    }
+                }
+                "setLowLatencyMode" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    try {
+                        audioManager?.mode = if (enabled) {
+                            AudioManager.MODE_IN_COMMUNICATION
+                        } else {
+                            AudioManager.MODE_NORMAL
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("AUDIO_ERROR", e.message, null)
+                    }
+                }
+                "openBluetoothSettings" -> {
+                    try {
+                        val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("INTENT_ERROR", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -285,7 +374,6 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // If foreground service is NOT running, release effects and close session
         if (!KaraokeFxForegroundService.isRunning) {
             try {
                 val intent = Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
