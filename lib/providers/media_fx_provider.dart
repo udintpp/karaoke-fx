@@ -100,6 +100,8 @@ class MediaFxProvider extends ChangeNotifier {
 
   bool get systemLoudnessEnabled => _systemLoudnessEnabled;
   double get systemLoudnessGain => _systemLoudnessGain;
+  double get systemLoudnessDb => _systemLoudnessGain / 100.0;
+  int get systemLoudnessPercent => 100 + ((_systemLoudnessGain / 2000.0) * 100).round();
 
   bool get backgroundServiceEnabled => _backgroundServiceEnabled;
   bool get autoStartOnBoot => _autoStartOnBoot;
@@ -386,9 +388,19 @@ class MediaFxProvider extends ChangeNotifier {
   }
 
   void setSystemLoudnessGain(double gainMb) {
-    _systemLoudnessGain = gainMb.clamp(0.0, 1000.0);
+    _systemLoudnessGain = gainMb.clamp(0.0, 2000.0);
     _systemFx.setLoudnessGain(_systemLoudnessGain.toInt());
     notifyListeners();
+  }
+
+  void setVolumeBoostPreset(double gainMb) {
+    if (gainMb <= 0) {
+      setSystemLoudnessEnabled(false);
+      setSystemLoudnessGain(0);
+    } else {
+      setSystemLoudnessEnabled(true);
+      setSystemLoudnessGain(gainMb);
+    }
   }
 
   // ─── Local File ──────────────────────────────────────────────────────────────

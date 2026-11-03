@@ -99,6 +99,10 @@ class MediaFxScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: 14),
+
+              // Dedicated Music Volume Booster (Super Loud / 200%)
+              _buildVolumeBoosterCard(media, context),
               const SizedBox(height: 20),
 
               // System Hardware Equalizer
@@ -151,27 +155,6 @@ class MediaFxScreen extends StatelessWidget {
                     color: AppTheme.secondary,
                     onChanged: (v) =>
                         media.setSystemVirtualizerStrength(v / 100.0),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // System Loudness Booster
-              FxToggleCard(
-                title: 'System Loudness Enhancer (Booster)',
-                icon: Icons.bolt_rounded,
-                color: AppTheme.warning,
-                enabled: media.systemLoudnessEnabled,
-                onToggle: media.setSystemLoudnessEnabled,
-                children: [
-                  FxSlider(
-                    label: 'Gain Boost (mB)',
-                    value: media.systemLoudnessGain,
-                    min: 0,
-                    max: 1000,
-                    unit: ' mB',
-                    color: AppTheme.warning,
-                    onChanged: (v) => media.setSystemLoudnessGain(v),
                   ),
                 ],
               ),
@@ -1320,6 +1303,252 @@ class MediaFxScreen extends StatelessWidget {
         },
       );
     }).toList();
+  }
+
+  Widget _buildVolumeBoosterCard(MediaFxProvider media, BuildContext context) {
+    final isBoosted = media.systemLoudnessEnabled && media.systemLoudnessGain > 0;
+    final boostPercent = media.systemLoudnessPercent;
+    final boostDb = media.systemLoudnessDb;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isBoosted
+              ? [
+                  const Color(0xFF2E1700),
+                  AppTheme.card,
+                ]
+              : [
+                  AppTheme.card,
+                  AppTheme.card,
+                ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isBoosted
+              ? const Color(0xFFFF9800).withOpacity(0.6)
+              : AppTheme.cardLight,
+          width: isBoosted ? 1.5 : 1.0,
+        ),
+        boxShadow: isBoosted
+            ? [
+                BoxShadow(
+                  color: const Color(0xFFFF9800).withOpacity(0.18),
+                  blurRadius: 16,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with switch
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isBoosted
+                      ? const Color(0xFFFF9800).withOpacity(0.2)
+                      : AppTheme.cardLight,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.rocket_launch_rounded,
+                  color: isBoosted
+                      ? const Color(0xFFFF9800)
+                      : AppTheme.textSecondary,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Text(
+                          '🚀 Penguat Volume Musik',
+                          style: TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isBoosted ? const Color(0xFFFF9800) : AppTheme.cardLight,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isBoosted ? '$boostPercent%' : 'OFF',
+                            style: TextStyle(
+                              color: isBoosted ? Colors.black : AppTheme.textSecondary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Perkeras volume lagu hingga 200% (+20 dB)',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch.adaptive(
+                value: media.systemLoudnessEnabled,
+                activeColor: const Color(0xFFFF9800),
+                onChanged: (val) {
+                  media.setSystemLoudnessEnabled(val);
+                  if (val && media.systemLoudnessGain == 0) {
+                    media.setSystemLoudnessGain(600); // Default to +6 dB (130%)
+                  }
+                },
+              ),
+            ],
+          ),
+
+          if (media.systemLoudnessEnabled) ...[
+            const SizedBox(height: 14),
+            // Boost Level Indicator
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFF9800).withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.volume_up_rounded, size: 18, color: Color(0xFFFF9800)),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Ekstra Keras: $boostPercent%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    '+${boostDb.toStringAsFixed(1)} dB',
+                    style: const TextStyle(
+                      color: Color(0xFFFF9800),
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'monospace',
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Slider
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: const Color(0xFFFF9800),
+                thumbColor: const Color(0xFFFF9800),
+                inactiveTrackColor: AppTheme.cardLight,
+                trackHeight: 6,
+                overlayColor: const Color(0xFFFF9800).withOpacity(0.2),
+              ),
+              child: Slider(
+                value: media.systemLoudnessGain,
+                min: 0,
+                max: 2000,
+                divisions: 20,
+                onChanged: (v) => media.setSystemLoudnessGain(v),
+              ),
+            ),
+
+            // Preset Quick Buttons
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _buildBoostChip(
+                  label: '100% (Normal)',
+                  active: media.systemLoudnessGain == 0,
+                  onTap: () => media.setVolumeBoostPreset(0),
+                ),
+                _buildBoostChip(
+                  label: '130% (+6dB)',
+                  active: (media.systemLoudnessGain - 600).abs() < 50,
+                  onTap: () => media.setVolumeBoostPreset(600),
+                ),
+                _buildBoostChip(
+                  label: '160% (+12dB)',
+                  active: (media.systemLoudnessGain - 1200).abs() < 50,
+                  onTap: () => media.setVolumeBoostPreset(1200),
+                ),
+                _buildBoostChip(
+                  label: '200% MAX',
+                  active: media.systemLoudnessGain >= 1950,
+                  color: const Color(0xFFFF5722),
+                  onTap: () => media.setVolumeBoostPreset(2000),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '💡 Bekerja otomatis untuk semua pemutar musik, YouTube, Spotify, dan Speaker Bluetooth',
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBoostChip({
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+    Color color = const Color(0xFFFF9800),
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? color : AppTheme.cardLight,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active ? color : Colors.transparent,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.black : AppTheme.textSecondary,
+            fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+            fontSize: 11,
+          ),
+        ),
+      ),
+    );
   }
 }
 
