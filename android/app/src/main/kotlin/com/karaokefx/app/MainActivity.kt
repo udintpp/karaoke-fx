@@ -429,6 +429,39 @@ class MainActivity : FlutterActivity() {
                         ))
                     }
                 }
+
+                // ─── Realtime Mic Pass-Through & DSP Methods ────────────────
+                "startRealtimeMic" -> {
+                    try {
+                        val success = RealtimeMicEngine.getInstance().start()
+                        result.success(success)
+                    } catch (e: Exception) {
+                        result.error("MIC_ERROR", e.message, null)
+                    }
+                }
+                "stopRealtimeMic" -> {
+                    try {
+                        RealtimeMicEngine.getInstance().stop()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("MIC_ERROR", e.message, null)
+                    }
+                }
+                "isRealtimeMicActive" -> {
+                    result.success(RealtimeMicEngine.getInstance().isLive())
+                }
+                "getRealtimeMicVu" -> {
+                    result.success(RealtimeMicEngine.getInstance().liveVuLevel.toDouble())
+                }
+                "updateRealtimeMicSettings" -> {
+                    try {
+                        val settings = call.arguments as? Map<String, Any?> ?: emptyMap()
+                        RealtimeMicEngine.getInstance().updateSettings(settings)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("MIC_ERROR", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -636,6 +669,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            RealtimeMicEngine.getInstance().stop()
+        } catch (_: Exception) {}
         if (bluetoothReceiver != null) {
             try {
                 unregisterReceiver(bluetoothReceiver)

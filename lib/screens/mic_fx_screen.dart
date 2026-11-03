@@ -406,14 +406,50 @@ class _MicControlCard extends StatelessWidget {
                   ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
-            mic.isRecording ? 'Tap to stop monitoring' : 'Tap to start monitoring',
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 12,
+            mic.isRecording
+                ? '🔴 MIKROFON LIVE REAL-TIME AKTIF'
+                : 'Ketuk untuk Menyalakan Mikrofon Live',
+            style: TextStyle(
+              color: mic.isRecording ? AppTheme.micColor : AppTheme.textSecondary,
+              fontWeight: mic.isRecording ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 13,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            mic.isRecording
+                ? 'Suara Anda keluar langsung ke speaker/headphone'
+                : 'Suara vokal langsung diproses dengan efek dan keluar ke speaker',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 11,
+            ),
+          ),
+          if (mic.isRecording) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.headphones_rounded, size: 14, color: AppTheme.primary),
+                  SizedBox(width: 6),
+                  Text(
+                    'Disarankan pakai headset/speaker eksternal agar tidak dengung',
+                    style: TextStyle(color: AppTheme.primary, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1);

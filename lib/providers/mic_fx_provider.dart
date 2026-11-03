@@ -1,15 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/fx_settings.dart';
+import '../services/system_audio_fx_service.dart';
 
 enum MicState { idle, recording, processing, error }
 
 class MicFxProvider extends ChangeNotifier {
-  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  final FlutterSoundPlayer _player = FlutterSoundPlayer();
+  final SystemAudioFxService _audioService = SystemAudioFxService();
+  Timer? _vuTimer;
 
   MicState _state = MicState.idle;
   MicFxSettings _settings = MicFxSettings();
@@ -41,54 +42,54 @@ class MicFxProvider extends ChangeNotifier {
     if (_isInitialized) return;
     try {
       await _loadSavedSettings();
-
-      // Request microphone permission
-      final status = await Permission.microphone.request();
-      if (status != PermissionStatus.granted) {
-        _errorMessage = 'Izin mikrofon ditolak';
-        _state = MicState.error;
-        notifyListeners();
-        return;
-      }
-
-      await _recorder.openRecorder();
-      await _player.openPlayer();
       _isInitialized = true;
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Gagal inisialisasi audio: $e';
+      _errorMessage = 'Gagal inisialisasi: $e';
       _state = MicState.error;
       notifyListeners();
     }
   }
 
   Future<void> startMonitoring() async {
-    if (!_isInitialized) await initialize();
-    if (_state == MicState.error) return;
-
     try {
+      _errorMessage = null;
+
+      // 1. Request microphone permission
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) {
+        _errorMessage = 'Izin mikrofon ditolak oleh pengguna';
+        _state = MicState.error;
+        notifyListeners();
+        return;
+      }
+
+      // 2. Push current DSP settings to native engine
+      await _audioService.updateRealtimeMicSettings(_settings.toMap());
+
+      // 3. Start native low-latency passthrough engine
+      final started = await _audioService.startRealtimeMic();
+      if (!started) {
+        _errorMessage = 'Gagal mengaktifkan mesin mikrofon real-time';
+        _state = MicState.error;
+        notifyListeners();
+        return;
+      }
+
       _state = MicState.recording;
       notifyListeners();
 
-      // Start recording for real-time monitoring and VU meter
-      await _recorder.startRecorder(
-        codec: Codec.aacADTS,
-        toFile: 'temp_mic_buffer.aac',
-        numChannels: 1,
-        sampleRate: 44100,
-      );
-
-      // Subscribe to audio level for VU meter
-      _recorder.onProgress!.listen((event) {
-        if (event.decibels != null) {
-          // Convert dB to 0-1 linear scale (-60dB to 0dB)
-          final db = event.decibels!.clamp(-60.0, 0.0);
-          _inputLevel = (db + 60) / 60;
+      // 4. Start smooth VU meter polling (~25 updates per second)
+      _vuTimer?.cancel();
+      _vuTimer = Timer.periodic(const Duration(milliseconds: 40), (_) async {
+        if (_state == MicState.recording) {
+          final vu = await _audioService.getRealtimeMicVu();
+          _inputLevel = vu;
           notifyListeners();
         }
       });
     } catch (e) {
-      _errorMessage = 'Error saat monitoring: $e';
+      _errorMessage = 'Error saat menyalakan mikrofon: $e';
       _state = MicState.error;
       notifyListeners();
     }
@@ -96,12 +97,14 @@ class MicFxProvider extends ChangeNotifier {
 
   Future<void> stopMonitoring() async {
     try {
-      await _recorder.stopRecorder();
+      _vuTimer?.cancel();
+      _vuTimer = null;
+      await _audioService.stopRealtimeMic();
       _state = MicState.idle;
       _inputLevel = 0.0;
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Error saat stop: $e';
+      _errorMessage = 'Error saat mematikan mikrofon: $e';
       notifyListeners();
     }
   }
@@ -109,6 +112,9 @@ class MicFxProvider extends ChangeNotifier {
   void updateSettings(MicFxSettings newSettings) {
     _settings = newSettings;
     _saveSettings();
+    if (_state == MicState.recording) {
+      _audioService.updateRealtimeMicSettings(_settings.toMap());
+    }
     notifyListeners();
   }
 
@@ -234,13 +240,16 @@ class MicFxProvider extends ChangeNotifier {
         break;
     }
     _saveSettings();
+    if (_state == MicState.recording) {
+      _audioService.updateRealtimeMicSettings(_settings.toMap());
+    }
     notifyListeners();
   }
 
   @override
   void dispose() {
-    _recorder.closeRecorder();
-    _player.closePlayer();
+    _vuTimer?.cancel();
+    _audioService.stopRealtimeMic();
     super.dispose();
   }
 }

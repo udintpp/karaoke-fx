@@ -272,4 +272,45 @@ class SystemAudioFxService {
       await _channel.invokeMethod('requestBluetoothPermissions');
     } catch (_) {}
   }
+
+  // ─── Realtime Mic Pass-Through & DSP Methods ──────────────────────
+  Future<bool> startRealtimeMic() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('startRealtimeMic');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> stopRealtimeMic() async {
+    try {
+      await _channel.invokeMethod('stopRealtimeMic');
+    } catch (_) {}
+  }
+
+  Future<bool> isRealtimeMicActive() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('isRealtimeMicActive');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<double> getRealtimeMicVu() async {
+    try {
+      final res = await _channel.invokeMethod<double>('getRealtimeMicVu');
+      return res ?? 0.0;
+    } catch (_) {
+      return 0.0;
+    }
+  }
+
+  Future<void> updateRealtimeMicSettings(Map<String, dynamic> settings) async {
+    try {
+      await _channel.invokeMethod('updateRealtimeMicSettings', settings);
+    } catch (_) {}
+  }
 }
+
