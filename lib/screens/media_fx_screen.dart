@@ -28,7 +28,7 @@ class MediaFxScreen extends StatelessWidget {
               const SizedBox(height: 14),
 
               // Bluetooth Audio Receiver & Router Card
-              _buildBluetoothAudioCard(media),
+              _buildBluetoothAudioCard(media, context),
               const SizedBox(height: 16),
 
               // System Media Volume (STREAM_MUSIC)
@@ -389,53 +389,343 @@ class MediaFxScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildBluetoothAudioCard(MediaFxProvider media) {
+  Widget _buildBluetoothAudioCard(MediaFxProvider media, BuildContext context) {
+    final bool isRxActive = media.isBtReceiverMode;
+    final bool hasSender = media.hasConnectedSender;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: media.hasConnectedBtDevice
-              ? AppTheme.accent.withOpacity(0.4)
-              : AppTheme.cardLight,
+          color: isRxActive
+              ? AppTheme.accent.withOpacity(0.5)
+              : media.hasConnectedBtDevice
+                  ? AppTheme.primary.withOpacity(0.4)
+                  : AppTheme.cardLight,
+          width: isRxActive ? 1.5 : 1.0,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header Row
           Row(
             children: [
-              const Icon(Icons.bluetooth_audio_rounded,
-                  color: AppTheme.accent, size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Bluetooth Audio Receiver & Routing',
-                style: TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isRxActive
+                      ? AppTheme.accent.withOpacity(0.2)
+                      : AppTheme.cardLight,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.bluetooth_audio_rounded,
+                  color: isRxActive ? AppTheme.accent : AppTheme.textSecondary,
+                  size: 20,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Bluetooth Audio Hub',
+                  style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
               IconButton(
-                icon: const Icon(Icons.refresh_rounded, size: 18),
+                icon: const Icon(Icons.refresh_rounded, size: 20),
                 color: AppTheme.textSecondary,
-                tooltip: 'Refresh Perangkat',
+                tooltip: 'Refresh Perangkat & Status',
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 onPressed: media.refreshBluetoothStatus,
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+
+          // ─── SECTION 1: MODE PENERIMA AUDIO (BLUETOOTH SINK) ─────────────
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isRxActive
+                    ? [
+                        AppTheme.accent.withOpacity(0.18),
+                        AppTheme.cardLight.withOpacity(0.4),
+                      ]
+                    : [
+                        AppTheme.cardLight.withOpacity(0.2),
+                        AppTheme.cardLight.withOpacity(0.1),
+                      ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isRxActive
+                    ? AppTheme.accent.withOpacity(0.4)
+                    : AppTheme.cardLight,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.accent,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  'RECEIVER / PENERIMA',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              if (isRxActive && media.isBtReceiverPlaying)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.success.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.graphic_eq_rounded,
+                                          color: AppTheme.success, size: 10),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        'STREAMING',
+                                        style: TextStyle(
+                                          color: AppTheme.success,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Penerima Musik Bluetooth',
+                            style: TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Jadikan HP ini speaker penerima dari HP lain, Laptop, PC, atau Smart TV.',
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: isRxActive,
+                      onChanged: (val) => media.toggleBluetoothReceiver(val),
+                      thumbColor: WidgetStateProperty.resolveWith(
+                        (s) => s.contains(WidgetState.selected)
+                            ? AppTheme.accent
+                            : AppTheme.textSecondary,
+                      ),
+                      trackColor: WidgetStateProperty.resolveWith(
+                        (s) => s.contains(WidgetState.selected)
+                            ? AppTheme.accent.withOpacity(0.35)
+                            : AppTheme.cardLight,
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (isRxActive) ...[
+                  const SizedBox(height: 10),
+                  // Detailed status badge
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: hasSender
+                          ? AppTheme.success.withOpacity(0.15)
+                          : media.isBtDiscoverable
+                              ? AppTheme.accent.withOpacity(0.15)
+                              : AppTheme.cardLight.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: hasSender
+                            ? AppTheme.success.withOpacity(0.4)
+                            : media.isBtDiscoverable
+                                ? AppTheme.accent.withOpacity(0.4)
+                                : Colors.transparent,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              hasSender
+                                  ? Icons.check_circle_rounded
+                                  : media.isBtDiscoverable
+                                      ? Icons.radar_rounded
+                                      : Icons.radio_button_checked_rounded,
+                              color: hasSender
+                                  ? AppTheme.success
+                                  : media.isBtDiscoverable
+                                      ? AppTheme.accent
+                                      : AppTheme.textSecondary,
+                              size: 15,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                hasSender
+                                    ? 'Tersambung dari: ${media.btSenderDeviceName}'
+                                    : media.isBtDiscoverable
+                                        ? 'Siaga: Terlihat sebagai "${media.btLocalDeviceName.isNotEmpty ? media.btLocalDeviceName : "HP Ini"}"'
+                                        : 'Mode Penerima Aktif (Nama: ${media.btLocalDeviceName.isNotEmpty ? media.btLocalDeviceName : "HP Ini"})',
+                                style: TextStyle(
+                                  color: hasSender
+                                      ? AppTheme.success
+                                      : AppTheme.textPrimary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          hasSender
+                            ? 'Audio dari pengirim otomatis masuk ke Equalizer & Efek Sistem HP ini.'
+                            : 'Sambungkan perangkat pengirim (Laptop/HP lain) ke nama Bluetooth di atas.',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+                  // Buttons for discoverability & guide
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => media.requestBluetoothDiscoverable(duration: 300),
+                          icon: const Icon(Icons.sensors_rounded, size: 14),
+                          label: const Text('Buat Terdeteksi', style: TextStyle(fontSize: 11)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.accent,
+                            side: const BorderSide(color: AppTheme.accent),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _showReceiverHelpDialog(context, media.btLocalDeviceName),
+                        icon: const Icon(Icons.help_outline_rounded, size: 14),
+                        label: const Text('Panduan', style: TextStyle(fontSize: 11)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.textSecondary,
+                          side: const BorderSide(color: AppTheme.cardLight),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+          const Divider(color: AppTheme.cardLight, height: 1),
+          const SizedBox(height: 12),
+
+          // ─── SECTION 2: PERANGKAT & ROUTING PENGIRIM (TRANSMITTER) ─────────
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'ROUTING & TRANSMITTER',
+                  style: TextStyle(
+                    color: AppTheme.primary,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: media.openBluetoothSettings,
+                child: const Text(
+                  'Buka Pengaturan HP',
+                  style: TextStyle(
+                    color: AppTheme.accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
 
           // Device status badge
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: media.hasConnectedBtDevice
-                  ? AppTheme.accent.withOpacity(0.12)
+                  ? AppTheme.primary.withOpacity(0.12)
                   : AppTheme.cardLight.withOpacity(0.4),
               borderRadius: BorderRadius.circular(10),
             ),
@@ -446,7 +736,7 @@ class MediaFxScreen extends StatelessWidget {
                       ? Icons.bluetooth_connected_rounded
                       : Icons.bluetooth_disabled_rounded,
                   color: media.hasConnectedBtDevice
-                      ? AppTheme.accent
+                      ? AppTheme.primary
                       : AppTheme.textSecondary,
                   size: 16,
                 ),
@@ -460,7 +750,7 @@ class MediaFxScreen extends StatelessWidget {
                             if (media.connectedBtMic.isNotEmpty)
                               '🎤 ${media.connectedBtMic}',
                           ].join(' | ')
-                        : 'Belum ada perangkat Bluetooth terhubung',
+                        : 'Belum ada speaker/mic Bluetooth terhubung',
                     style: TextStyle(
                       color: media.hasConnectedBtDevice
                           ? AppTheme.textPrimary
@@ -472,32 +762,12 @@ class MediaFxScreen extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 6),
-                GestureDetector(
-                  onTap: media.openBluetoothSettings,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppTheme.accent.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      'Pengaturan',
-                      style: TextStyle(
-                        color: AppTheme.accent,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // Toggle 1: Wireless Bluetooth Mic (SCO)
+          // Toggle: Wireless Bluetooth Mic (SCO)
           Row(
             children: [
               Expanded(
@@ -542,7 +812,7 @@ class MediaFxScreen extends StatelessWidget {
 
           const Divider(color: AppTheme.cardLight, height: 14),
 
-          // Toggle 2: Output ke Speaker Bluetooth (A2DP)
+          // Toggle: Output ke Speaker Bluetooth (A2DP)
           Row(
             children: [
               Expanded(
@@ -587,7 +857,7 @@ class MediaFxScreen extends StatelessWidget {
 
           const Divider(color: AppTheme.cardLight, height: 14),
 
-          // Toggle 3: Mode Low-Latency (Anti Delay Vokal)
+          // Toggle: Mode Low-Latency (Anti Delay Vokal)
           Row(
             children: [
               Expanded(
@@ -628,6 +898,89 @@ class MediaFxScreen extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReceiverHelpDialog(BuildContext context, String localName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.bluetooth_audio_rounded, color: AppTheme.accent, size: 24),
+            SizedBox(width: 8),
+            Text(
+              'Cara Kerja Mode Penerima',
+              style: TextStyle(
+                color: AppTheme.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Mode ini mengubah HP Anda menjadi Receiver (Speaker) Audio Bluetooth untuk menerima musik dari HP lain, Laptop, PC, atau Smart TV:',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              _buildStepItem('1', 'Nyalakan saklar "Penerima Musik Bluetooth" di atas.'),
+              _buildStepItem('2', 'Tekan "Buat Terdeteksi" agar HP ini bisa dicari di Bluetooth perangkat lain.'),
+              _buildStepItem('3', 'Di HP teman / Laptop Anda, buka pengaturan Bluetooth dan sambungkan ke "${localName.isNotEmpty ? localName : "HP Ini"}".'),
+              _buildStepItem('4', 'Putar lagu karaoke atau YouTube dari HP teman / Laptop.'),
+              _buildStepItem('5', 'Musik akan langsung masuk ke HP ini, diolah oleh Hardware Equalizer & Bass Boost, dan dapat dinyanyikan langsung bersama Mic!'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Mengerti', style: TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepItem(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 20,
+            height: 20,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: AppTheme.accent,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              number,
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12, height: 1.3),
+            ),
           ),
         ],
       ),

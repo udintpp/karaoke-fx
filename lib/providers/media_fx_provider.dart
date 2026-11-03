@@ -53,6 +53,14 @@ class MediaFxProvider extends ChangeNotifier {
   bool _isBtSpeakerEnabled = true;
   bool _isLowLatencyEnabled = false;
 
+  bool _isBtReceiverMode = false;
+  bool _isBtDiscoverable = false;
+  String _btLocalDeviceName = '';
+  String _btSenderDeviceName = '';
+  String _btSenderDeviceAddress = '';
+  bool _isBtReceiverPlaying = false;
+  bool _isBtSinkSupported = true;
+
   // ─── Getters ────────────────────────────────────────────────────────────────
   MediaState get state => _state;
   MediaSource get source => _source;
@@ -99,6 +107,16 @@ class MediaFxProvider extends ChangeNotifier {
   bool get hasConnectedBtDevice =>
       _connectedBtSpeaker.isNotEmpty || _connectedBtMic.isNotEmpty;
 
+  // Bluetooth Receiver Getters
+  bool get isBtReceiverMode => _isBtReceiverMode;
+  bool get isBtDiscoverable => _isBtDiscoverable;
+  String get btLocalDeviceName => _btLocalDeviceName;
+  String get btSenderDeviceName => _btSenderDeviceName;
+  String get btSenderDeviceAddress => _btSenderDeviceAddress;
+  bool get isBtReceiverPlaying => _isBtReceiverPlaying;
+  bool get isBtSinkSupported => _isBtSinkSupported;
+  bool get hasConnectedSender => _btSenderDeviceName.isNotEmpty;
+
   double get progressValue {
     if (_duration.inMilliseconds == 0) return 0;
     return (_position.inMilliseconds / _duration.inMilliseconds).clamp(0, 1);
@@ -130,6 +148,7 @@ class MediaFxProvider extends ChangeNotifier {
 
     _autoStartOnBoot = saved['autoStartOnBoot'] ?? true;
     _backgroundServiceEnabled = await _systemFx.isForegroundServiceRunning();
+    _isBtReceiverMode = saved['btReceiverEnabled'] ?? false;
 
     notifyListeners();
   }
@@ -194,6 +213,33 @@ class MediaFxProvider extends ChangeNotifier {
     _connectedBtMic = status['connectedMic'] ?? '';
     _isBtMicEnabled = status['isScoOn'] ?? false;
     _isLowLatencyEnabled = status['isLowLatencyOn'] ?? false;
+
+    final rxStatus = await _systemFx.getBluetoothReceiverStatus();
+    _isBtReceiverMode = rxStatus['isReceiverEnabled'] ?? _isBtReceiverMode;
+    _isBtDiscoverable = rxStatus['isDiscoverable'] ?? false;
+    _btLocalDeviceName = rxStatus['localDeviceName'] ?? '';
+    _btSenderDeviceName = rxStatus['connectedSenderName'] ?? '';
+    _btSenderDeviceAddress = rxStatus['connectedSenderAddress'] ?? '';
+    _isBtReceiverPlaying = rxStatus['isPlayingMusic'] ?? false;
+    _isBtSinkSupported = rxStatus['isSinkSupported'] ?? true;
+
+    notifyListeners();
+  }
+
+  Future<void> toggleBluetoothReceiver(bool enable, {int duration = 300}) async {
+    _isBtReceiverMode = enable;
+    if (enable) {
+      await _systemFx.startBluetoothReceiverMode(duration: duration);
+    } else {
+      await _systemFx.stopBluetoothReceiverMode();
+    }
+    await refreshBluetoothStatus();
+    notifyListeners();
+  }
+
+  Future<void> requestBluetoothDiscoverable({int duration = 300}) async {
+    await _systemFx.requestBluetoothDiscoverable(duration: duration);
+    await refreshBluetoothStatus();
     notifyListeners();
   }
 

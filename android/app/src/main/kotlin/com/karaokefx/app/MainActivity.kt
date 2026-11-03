@@ -1,8 +1,13 @@
 package com.karaokefx.app
 
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -30,6 +35,14 @@ class MainActivity : FlutterActivity() {
     // AudioSession 0 targets the GLOBAL Android system audio output mix
     private val GLOBAL_AUDIO_SESSION = 0
 
+    // Bluetooth A2DP Sink (Audio Receiver) profile constant
+    private val A2DP_SINK = 11
+    private var a2dpSinkProxy: BluetoothProfile? = null
+    private var connectedSenderDeviceName: String = ""
+    private var connectedSenderDeviceAddress: String = ""
+    private var isBtReceiverStreaming: Boolean = false
+    private var bluetoothReceiver: BroadcastReceiver? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -37,6 +50,8 @@ class MainActivity : FlutterActivity() {
 
         initSystemAudioFx()
         restoreSavedSettings()
+        initBluetoothSink()
+        registerBtBroadcastReceiver()
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -55,7 +70,8 @@ class MainActivity : FlutterActivity() {
                         "virtEnabled" to prefs.getBoolean("virt_enabled", false),
                         "virtStrength" to prefs.getInt("virt_strength", 500),
                         "loudEnabled" to prefs.getBoolean("loud_enabled", false),
-                        "loudGain" to prefs.getInt("loud_gain", 300)
+                        "loudGain" to prefs.getInt("loud_gain", 300),
+                        "btReceiverEnabled" to prefs.getBoolean("bt_receiver_enabled", false)
                     )
                     result.success(map)
                 }
@@ -281,6 +297,73 @@ class MainActivity : FlutterActivity() {
                         result.error("INTENT_ERROR", e.message, null)
                     }
                 }
+
+                // ─── Bluetooth Audio Receiver (A2DP Sink) Methods ──────────
+                "startBluetoothReceiverMode" -> {
+                    val duration = call.argument<Int>("duration") ?: 300
+                    prefs.edit().putBoolean("bt_receiver_enabled", true).apply()
+                    initSystemAudioFx()
+
+                    // Ensure background service is running so stream doesn't drop when screen turns off
+                    try {
+                        val svcIntent = Intent(this, KaraokeFxForegroundService::class.java).apply {
+                            action = KaraokeFxForegroundService.ACTION_START
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(svcIntent)
+                        } else {
+                            startService(svcIntent)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    // Prompt discoverable so other phones/laptops can discover this device
+                    try {
+                        val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                            putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, duration)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(discoverableIntent)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    result.success(true)
+                }
+                "stopBluetoothReceiverMode" -> {
+                    prefs.edit().putBoolean("bt_receiver_enabled", false).apply()
+                    result.success(true)
+                }
+                "requestDiscoverable" -> {
+                    val duration = call.argument<Int>("duration") ?: 300
+                    try {
+                        val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                            putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, duration)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(discoverableIntent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("DISCOVERABLE_ERROR", e.message, null)
+                    }
+                }
+                "getBluetoothReceiverStatus" -> {
+                    val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+                    val adapter = btManager?.adapter
+                    updateConnectedSenderDevice()
+                    val isDiscoverable = (adapter?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE)
+                    result.success(mapOf(
+                        "isReceiverEnabled" to prefs.getBoolean("bt_receiver_enabled", false),
+                        "isBluetoothEnabled" to (adapter?.isEnabled ?: false),
+                        "isDiscoverable" to isDiscoverable,
+                        "localDeviceName" to (adapter?.name ?: "Android Karaoke Device"),
+                        "connectedSenderName" to connectedSenderDeviceName,
+                        "connectedSenderAddress" to connectedSenderDeviceAddress,
+                        "isPlayingMusic" to isBtReceiverStreaming,
+                        "isSinkSupported" to (a2dpSinkProxy != null)
+                    ))
+                }
                 else -> result.notImplemented()
             }
         }
@@ -372,8 +455,126 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun initBluetoothSink() {
+        val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val adapter = btManager?.adapter ?: return
+        try {
+            adapter.getProfileProxy(applicationContext, object : BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                    if (profile == A2DP_SINK) {
+                        a2dpSinkProxy = proxy
+                        updateConnectedSenderDevice()
+                    }
+                }
+                override fun onServiceDisconnected(profile: Int) {
+                    if (profile == A2DP_SINK) {
+                        a2dpSinkProxy = null
+                        connectedSenderDeviceName = ""
+                        connectedSenderDeviceAddress = ""
+                        isBtReceiverStreaming = false
+                    }
+                }
+            }, A2DP_SINK)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun registerBtBroadcastReceiver() {
+        if (bluetoothReceiver != null) return
+        bluetoothReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val action = intent?.action ?: return
+                when (action) {
+                    BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                        }
+                        if (device != null) {
+                            connectedSenderDeviceName = device.name ?: "Perangkat Terhubung"
+                            connectedSenderDeviceAddress = device.address ?: ""
+                        }
+                    }
+                    BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                        connectedSenderDeviceName = ""
+                        connectedSenderDeviceAddress = ""
+                        isBtReceiverStreaming = false
+                    }
+                    "android.bluetooth.a2dp-sink.profile.action.CONNECTION_STATE_CHANGED" -> {
+                        val state = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, BluetoothProfile.STATE_DISCONNECTED)
+                        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                        }
+                        if (state == BluetoothProfile.STATE_CONNECTED && device != null) {
+                            connectedSenderDeviceName = device.name ?: "Perangkat Audio Pengirim"
+                            connectedSenderDeviceAddress = device.address ?: ""
+                        } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
+                            connectedSenderDeviceName = ""
+                            connectedSenderDeviceAddress = ""
+                            isBtReceiverStreaming = false
+                        }
+                    }
+                    "android.bluetooth.a2dp-sink.profile.action.PLAYING_STATE_CHANGED" -> {
+                        val playState = intent.getIntExtra(BluetoothProfile.EXTRA_STATE, 0)
+                        isBtReceiverStreaming = (playState == 10 || playState == 1)
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(BluetoothAdapter.ACTION_SCAN_MODE_CHANGED)
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction("android.bluetooth.a2dp-sink.profile.action.CONNECTION_STATE_CHANGED")
+            addAction("android.bluetooth.a2dp-sink.profile.action.PLAYING_STATE_CHANGED")
+        }
+        registerReceiver(bluetoothReceiver, filter)
+    }
+
+    private fun updateConnectedSenderDevice() {
+        try {
+            val proxy = a2dpSinkProxy
+            if (proxy != null) {
+                val devices = proxy.connectedDevices
+                if (devices.isNotEmpty()) {
+                    val dev = devices[0]
+                    connectedSenderDeviceName = dev.name ?: "Perangkat Pengirim"
+                    connectedSenderDeviceAddress = dev.address ?: ""
+                    try {
+                        val method = proxy.javaClass.getMethod("isA2dpPlaying", BluetoothDevice::class.java)
+                        isBtReceiverStreaming = method.invoke(proxy, dev) as? Boolean ?: false
+                    } catch (_: Exception) {
+                        isBtReceiverStreaming = true
+                    }
+                    return
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        if (bluetoothReceiver != null) {
+            try {
+                unregisterReceiver(bluetoothReceiver)
+            } catch (_: Exception) {}
+            bluetoothReceiver = null
+        }
+        if (a2dpSinkProxy != null) {
+            val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            btManager?.adapter?.closeProfileProxy(A2DP_SINK, a2dpSinkProxy)
+            a2dpSinkProxy = null
+        }
+
         if (!KaraokeFxForegroundService.isRunning) {
             try {
                 val intent = Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {

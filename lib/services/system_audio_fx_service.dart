@@ -221,4 +221,43 @@ class SystemAudioFxService {
       await _channel.invokeMethod('openBluetoothSettings');
     } catch (_) {}
   }
+
+  // ─── Bluetooth Audio Receiver (A2DP Sink) Methods ──────────────────────────
+
+  Future<Map<String, dynamic>> getBluetoothReceiverStatus() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('getBluetoothReceiverStatus');
+      if (res != null) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (_) {}
+    return {
+      'isReceiverEnabled': false,
+      'isBluetoothEnabled': false,
+      'isDiscoverable': false,
+      'localDeviceName': 'Android Karaoke Device',
+      'connectedSenderName': '',
+      'connectedSenderAddress': '',
+      'isPlayingMusic': false,
+      'isSinkSupported': true,
+    };
+  }
+
+  Future<void> startBluetoothReceiverMode({int duration = 300}) async {
+    try {
+      await _channel.invokeMethod('startBluetoothReceiverMode', {'duration': duration});
+    } catch (_) {}
+  }
+
+  Future<void> stopBluetoothReceiverMode() async {
+    try {
+      await _channel.invokeMethod('stopBluetoothReceiverMode');
+    } catch (_) {}
+  }
+
+  Future<void> requestBluetoothDiscoverable({int duration = 300}) async {
+    try {
+      await _channel.invokeMethod('requestDiscoverable', {'duration': duration});
+    } catch (_) {}
+  }
 }
