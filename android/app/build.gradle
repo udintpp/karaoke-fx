@@ -53,11 +53,10 @@ android {
 
     buildTypes {
         release {
-            // Signing with debug keys for now; configure signing config for release builds
+            // Signed with debug keys for immediate installation without keystore
             signingConfig = signingConfigs.debug
-            minifyEnabled true
+            minifyEnabled false
             shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             applicationIdSuffix ".debug"

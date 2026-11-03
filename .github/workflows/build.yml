@@ -46,20 +46,15 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 30
 
-      # Optional: Build Release APK (uncomment & add signing keys to secrets)
-      # - name: 🏗️ Build Release APK
-      #   run: flutter build apk --release --no-tree-shake-icons
-      #   env:
-      #     KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-      #     KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-      #     KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-      #
-      # - name: 📤 Upload Release APK
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: karaoke-fx-release-apk
-      #     path: build/app/outputs/flutter-apk/app-release.apk
-      #     retention-days: 30
+      - name: 🏗️ Build Release APK
+        run: flutter build apk --release --no-tree-shake-icons
+
+      - name: 📤 Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: karaoke-fx-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
 
       - name: ✅ Build Info
         run: |
