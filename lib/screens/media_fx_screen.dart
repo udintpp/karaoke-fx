@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/media_fx_provider.dart';
@@ -494,7 +495,196 @@ class MediaFxScreen extends StatelessWidget {
             const SizedBox(height: 12),
           ],
 
-          // ─── SECTION 1: MODE PENERIMA AUDIO (BLUETOOTH SINK) ─────────────
+          // ─── SECTION 1: PENERIMA MUSIK NIRKABEL (WEB RECEIVER - REKOMENDASI 100% DIDUKUNG) ─
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: media.isWirelessReceiverRunning
+                    ? [
+                        AppTheme.accent.withOpacity(0.2),
+                        AppTheme.primary.withOpacity(0.1),
+                      ]
+                    : [
+                        AppTheme.cardLight.withOpacity(0.25),
+                        AppTheme.cardLight.withOpacity(0.1),
+                      ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: media.isWirelessReceiverRunning
+                    ? AppTheme.accent.withOpacity(0.6)
+                    : AppTheme.cardLight,
+                width: media.isWirelessReceiverRunning ? 1.5 : 1.0,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.success,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text(
+                                  '⭐ 100% DIDUKUNG SEMUA HP & LAPTOP',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Penerima Musik Nirkabel (Web Receiver)',
+                            style: TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Kirim lagu dari HP teman / Laptop langsung lewat browser (Chrome/Safari) tanpa instal aplikasi!',
+                            style: TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: media.isWirelessReceiverRunning,
+                      onChanged: (val) => media.toggleWirelessReceiver(val),
+                      thumbColor: WidgetStateProperty.resolveWith(
+                        (s) => s.contains(WidgetState.selected)
+                            ? AppTheme.accent
+                            : AppTheme.textSecondary,
+                      ),
+                      trackColor: WidgetStateProperty.resolveWith(
+                        (s) => s.contains(WidgetState.selected)
+                            ? AppTheme.accent.withOpacity(0.35)
+                            : AppTheme.cardLight,
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (media.isWirelessReceiverRunning) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.card,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.accent.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Buka alamat ini di HP teman atau Laptop Anda:',
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black26,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppTheme.accent.withOpacity(0.4)),
+                                ),
+                                child: Text(
+                                  media.wirelessReceiverUrl,
+                                  style: const TextStyle(
+                                    color: AppTheme.accent,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'monospace',
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: media.wirelessReceiverUrl));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Alamat URL berhasil disalin!')),
+                                );
+                              },
+                              icon: const Icon(Icons.copy_rounded, size: 16),
+                              style: IconButton.styleFrom(
+                                backgroundColor: AppTheme.accent,
+                                foregroundColor: Colors.black,
+                              ),
+                              tooltip: 'Salin Alamat',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '💡 Pastikan kedua HP terhubung ke Wi-Fi yang sama (atau nyalakan Hotspot di HP ini). Di HP teman/laptop buka Chrome, masukkan alamat di atas, lalu pilih lagu MP3!',
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 10, height: 1.3),
+                        ),
+                        if (media.lastReceivedSong.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.success.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.music_note_rounded, color: AppTheme.success, size: 14),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Lagu Diterima: ${media.lastReceivedSong}',
+                                    style: const TextStyle(
+                                        color: AppTheme.success,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // ─── SECTION 2: MODE PENERIMA AUDIO BLUETOOTH ─────────────────────
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -538,7 +728,7 @@ class MediaFxScreen extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: const Text(
-                                  'RECEIVER / PENERIMA',
+                                  'BLUETOOTH SINK',
                                   style: TextStyle(
                                     color: Colors.black,
                                     fontSize: 9,
@@ -577,7 +767,7 @@ class MediaFxScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           const Text(
-                            'Penerima Musik Bluetooth',
+                            'Penerima Audio Bluetooth',
                             style: TextStyle(
                               color: AppTheme.textPrimary,
                               fontSize: 13,
@@ -586,7 +776,7 @@ class MediaFxScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           const Text(
-                            'Jadikan HP ini speaker penerima dari HP lain, Laptop, PC, atau Smart TV.',
+                            'Mode siaga koneksi Bluetooth dengan perangkat lain.',
                             style: TextStyle(
                               color: AppTheme.textSecondary,
                               fontSize: 11,
@@ -614,7 +804,6 @@ class MediaFxScreen extends StatelessWidget {
 
                 if (isRxActive) ...[
                   const SizedBox(height: 10),
-                  // Detailed status badge
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -687,7 +876,6 @@ class MediaFxScreen extends StatelessWidget {
                   ),
 
                   const SizedBox(height: 10),
-                  // Buttons for discoverability & guide
                   Row(
                     children: [
                       Expanded(
@@ -707,12 +895,12 @@ class MediaFxScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       OutlinedButton.icon(
-                        onPressed: () => _showReceiverHelpDialog(context, media.btLocalDeviceName),
+                        onPressed: () => _showBluetoothSpeakerExplanation(context),
                         icon: const Icon(Icons.help_outline_rounded, size: 14),
-                        label: const Text('Panduan', style: TextStyle(fontSize: 11)),
+                        label: const Text('Kenapa Belum Speaker?', style: TextStyle(fontSize: 11)),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.textSecondary,
-                          side: const BorderSide(color: AppTheme.cardLight),
+                          foregroundColor: AppTheme.warning,
+                          side: BorderSide(color: AppTheme.warning.withOpacity(0.5)),
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -990,6 +1178,75 @@ class MediaFxScreen extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Mengerti', style: TextStyle(color: AppTheme.accent, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBluetoothSpeakerExplanation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline_rounded, color: AppTheme.warning, size: 24),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Mengapa Terdeteksi HP, Bukan Speaker?',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Batasan Resmi Sistem Android (Google):',
+                style: TextStyle(
+                    color: AppTheme.accent,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Semua smartphone Android standar (Samsung, Xiaomi, Oppo, Vivo, Realme, dll.) oleh pabrikan firmware dikunci hanya sebagai "Pengirim Audio (A2DP Source)", bukan "Penerima/Speaker (A2DP Sink)".\n\nKarena batasan sistem operasi Android ini, HP lain atau laptop akan mendeteksi HP ini sebagai Smartphone/Telepon, bukan speaker Bluetooth biasa.',
+                style: TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
+              ),
+              SizedBox(height: 12),
+              Text(
+                '💡 Solusi Resmi Terbaik Tanpa Batasan:',
+                style: TextStyle(
+                    color: AppTheme.success,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Gunakan fitur "Penerima Musik Nirkabel (Web Receiver)" di bagian atas tab ini! Anda cukup membuka browser (Chrome/Safari) di HP teman atau Laptop Anda untuk langsung mengirim lagu & karaoke ke HP ini tanpa batasan Bluetooth!',
+                style: TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Mengerti',
+                style: TextStyle(
+                    color: AppTheme.accent, fontWeight: FontWeight.w700)),
           ),
         ],
       ),

@@ -5,6 +5,7 @@ import '../models/fx_settings.dart';
 import '../models/youtube_models.dart';
 import '../services/youtube_service.dart';
 import '../services/system_audio_fx_service.dart';
+import '../services/wireless_receiver_service.dart';
 
 enum MediaState { idle, loading, playing, paused, stopped, error }
 
@@ -14,10 +15,15 @@ class MediaFxProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   final YoutubeService _ytService = YoutubeService();
   final SystemAudioFxService _systemFx = SystemAudioFxService();
+  final WirelessReceiverService _wirelessReceiver = WirelessReceiverService();
 
   MediaState _state = MediaState.idle;
   MediaSource _source = MediaSource.none;
   MediaFxSettings _settings = MediaFxSettings();
+
+  bool _isWirelessReceiverRunning = false;
+  String _wirelessReceiverUrl = '';
+  String _lastReceivedSong = '';
 
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -118,6 +124,11 @@ class MediaFxProvider extends ChangeNotifier {
   bool get isBtSinkSupported => _isBtSinkSupported;
   bool get hasConnectedSender => _btSenderDeviceName.isNotEmpty;
 
+  // Wireless Receiver Getters
+  bool get isWirelessReceiverRunning => _isWirelessReceiverRunning;
+  String get wirelessReceiverUrl => _wirelessReceiverUrl;
+  String get lastReceivedSong => _lastReceivedSong;
+
   double get progressValue {
     if (_duration.inMilliseconds == 0) return 0;
     return (_position.inMilliseconds / _duration.inMilliseconds).clamp(0, 1);
@@ -185,6 +196,43 @@ class MediaFxProvider extends ChangeNotifier {
         notifyListeners();
       }
     });
+
+    _wirelessReceiver.onAudioFileReceived = (filePath, fileName) {
+      _lastReceivedSong = fileName;
+      loadFile(filePath, fileName);
+    };
+
+    _wirelessReceiver.onYouTubeUrlReceived = (url) {
+      final regExp = RegExp(
+        r'(?:v=|\/embed\/|\/1\/|\/v\/|https:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})',
+        caseSensitive: false,
+      );
+      final match = regExp.firstMatch(url);
+      final videoId = match?.group(1);
+      if (videoId != null) {
+        _lastReceivedSong = 'YouTube ($videoId)';
+        _loadYoutubeById(
+          videoId,
+          'YouTube Karaoke ($videoId)',
+          'https://img.youtube.com/vi/$videoId/hqdefault.jpg',
+        );
+      }
+    };
+  }
+
+  // ─── Wireless Web Receiver Controls ────────────────────────────────────────
+
+  Future<void> toggleWirelessReceiver(bool enable) async {
+    if (enable) {
+      final success = await _wirelessReceiver.startServer();
+      _isWirelessReceiverRunning = success;
+      _wirelessReceiverUrl = _wirelessReceiver.serverUrl;
+    } else {
+      await _wirelessReceiver.stopServer();
+      _isWirelessReceiverRunning = false;
+      _wirelessReceiverUrl = '';
+    }
+    notifyListeners();
   }
 
   // ─── Background Service & Auto Start Controls ─────────────────────────────
