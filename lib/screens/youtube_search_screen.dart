@@ -84,8 +84,8 @@ class _YoutubeSearchScreenState extends State<YoutubeSearchScreen> {
       BuildContext context, YoutubeSearchResult result) async {
     final media = context.read<MediaFxProvider>();
 
-    // Mute/stop the iframe player (visual only for preview)
-    _ytPlayerCtrl?.muteVideo();
+    // Pause the iframe player before loading audio into the FX pipeline
+    _ytPlayerCtrl?.pauseVideo();
 
     // Load audio stream ke FX pipeline
     await media.loadYoutubeAudio(result);

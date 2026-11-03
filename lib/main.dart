@@ -13,23 +13,7 @@ void main() async {
 
   // Configure audio session for karaoke use
   final session = await AudioSession.instance;
-  await session.configure(const AudioSessionConfiguration(
-    avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-    avAudioSessionCategoryOptions:
-        AVAudioSessionCategoryOptions.allowBluetooth |
-        AVAudioSessionCategoryOptions.defaultToSpeaker,
-    avAudioSessionMode: AVAudioSessionMode.default_,
-    avAudioSessionRouteSharingPolicy:
-        AVAudioSessionRouteSharingPolicy.defaultPolicy,
-    avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-    androidAudioAttributes: AndroidAudioAttributes(
-      contentType: AndroidAudioContentType.music,
-      flags: AndroidAudioFlags.none,
-      usage: AndroidAudioUsage.media,
-    ),
-    androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-    androidWillPauseWhenDucked: true,
-  ));
+  await session.configure(const AudioSessionConfiguration.music());
 
   runApp(
     MultiProvider(

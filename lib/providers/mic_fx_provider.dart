@@ -66,10 +66,10 @@ class MicFxProvider extends ChangeNotifier {
       _state = MicState.recording;
       notifyListeners();
 
-      // Start recording to stream for real-time processing
+      // Start recording for real-time monitoring and VU meter
       await _recorder.startRecorder(
-        codec: Codec.pcm16,
-        toStream: true,
+        codec: Codec.aacADTS,
+        toFile: 'temp_mic_buffer.aac',
         numChannels: 1,
         sampleRate: 44100,
       );

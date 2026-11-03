@@ -23,9 +23,11 @@ class YoutubeService {
                 videoId: v.id.value,
                 title: v.title,
                 channelName: v.author,
-                thumbnailUrl: v.thumbnails.highResUrl,
-                duration: _formatDuration(v.duration),
-                viewCount: _formatViews(v.engagement.viewCount),
+                thumbnailUrl: v.thumbnails.isNotEmpty
+                    ? v.thumbnails.last.url.toString()
+                    : 'https://img.youtube.com/vi/${v.id.value}/hqdefault.jpg',
+                duration: v.duration ?? '--:--',
+                viewCount: '',
               ))
           .toList();
     } catch (e) {
@@ -67,7 +69,7 @@ class YoutubeService {
         streamUrl: bestStream.url.toString(),
         title: video.title,
         videoId: videoId,
-        thumbnailUrl: video.thumbnails.highResUrl,
+        thumbnailUrl: 'https://img.youtube.com/vi/$videoId/hqdefault.jpg',
         duration: video.duration,
         bitrate: bestStream.bitrate.kiloBitsPerSecond.round(),
         container: bestStream.codec.mimeType,
@@ -89,9 +91,9 @@ class YoutubeService {
         videoId: video.id.value,
         title: video.title,
         channelName: video.author,
-        thumbnailUrl: video.thumbnails.highResUrl,
+        thumbnailUrl: 'https://img.youtube.com/vi/${video.id.value}/hqdefault.jpg',
         duration: _formatDuration(video.duration),
-        viewCount: _formatViews(video.engagement.viewCount),
+        viewCount: '',
       );
     } catch (_) {
       return null;
