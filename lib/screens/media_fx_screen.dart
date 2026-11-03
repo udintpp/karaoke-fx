@@ -21,6 +21,10 @@ class MediaFxScreen extends StatelessWidget {
             children: [
               // System Global Audio Banner
               _buildSystemInfoCard(context),
+              const SizedBox(height: 14),
+
+              // Background Service & Auto-Start on Boot Card
+              _buildBackgroundAndBootCard(media),
               const SizedBox(height: 16),
 
               // System Media Volume (STREAM_MUSIC)
@@ -232,6 +236,149 @@ class MediaFxScreen extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBackgroundAndBootCard(MediaFxProvider media) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.cardLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.settings_suggest_rounded,
+                  color: AppTheme.primary, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Layanan Latar & Otomatisasi',
+                style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.success.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.save_rounded, color: AppTheme.success, size: 12),
+                    SizedBox(width: 4),
+                    Text(
+                      'Auto-Save',
+                      style: TextStyle(
+                        color: AppTheme.success,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Toggle 1: Aktif di Latar Belakang (Foreground Service)
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Aktif di Latar Belakang',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Efek audio & mic tetap aktif saat membuka YouTube/Spotify atau layar HP mati.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: media.backgroundServiceEnabled,
+                onChanged: media.toggleBackgroundService,
+                thumbColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.primary
+                      : AppTheme.textSecondary,
+                ),
+                trackColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.primary.withOpacity(0.35)
+                      : AppTheme.cardLight,
+                ),
+              ),
+            ],
+          ),
+
+          const Divider(color: AppTheme.cardLight, height: 16),
+
+          // Toggle 2: Aktif Saat HP Dinyalakan (Auto Start on Boot)
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Aktif Otomatis saat HP Nyala (Boot)',
+                      style: TextStyle(
+                        color: AppTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Otomatis terapkan efek equalizer & booster tersimpan saat HP baru selesai restart.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: media.autoStartOnBoot,
+                onChanged: media.toggleAutoStartOnBoot,
+                thumbColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.accent
+                      : AppTheme.textSecondary,
+                ),
+                trackColor: WidgetStateProperty.resolveWith(
+                  (s) => s.contains(WidgetState.selected)
+                      ? AppTheme.accent.withOpacity(0.35)
+                      : AppTheme.cardLight,
+                ),
+              ),
+            ],
           ),
         ],
       ),

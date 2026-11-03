@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/fx_settings.dart';
 
 enum MicState { idle, recording, processing, error }
@@ -38,6 +40,8 @@ class MicFxProvider extends ChangeNotifier {
   Future<void> initialize() async {
     if (_isInitialized) return;
     try {
+      await _loadSavedSettings();
+
       // Request microphone permission
       final status = await Permission.microphone.request();
       if (status != PermissionStatus.granted) {
@@ -104,8 +108,27 @@ class MicFxProvider extends ChangeNotifier {
 
   void updateSettings(MicFxSettings newSettings) {
     _settings = newSettings;
+    _saveSettings();
     notifyListeners();
-    // TODO: Apply settings to native audio processing engine
+  }
+
+  Future<void> _saveSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('karaoke_mic_settings', jsonEncode(_settings.toMap()));
+    } catch (_) {}
+  }
+
+  Future<void> _loadSavedSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedStr = prefs.getString('karaoke_mic_settings');
+      if (savedStr != null) {
+        final map = jsonDecode(savedStr) as Map<String, dynamic>;
+        _settings = MicFxSettings.fromMap(map);
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   void applyPreset(int presetIndex) {
@@ -210,6 +233,7 @@ class MicFxProvider extends ChangeNotifier {
         );
         break;
     }
+    _saveSettings();
     notifyListeners();
   }
 

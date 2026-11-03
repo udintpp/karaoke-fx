@@ -125,6 +125,66 @@ class MicFxSettings {
       eqTreble: eqTreble ?? this.eqTreble,
     );
   }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'isEnabled': isEnabled,
+      'inputGain': inputGain,
+      'echoEnabled': echoEnabled,
+      'echoDelay': echoDelay,
+      'echoFeedback': echoFeedback,
+      'echoWetMix': echoWetMix,
+      'reverbEnabled': reverbEnabled,
+      'reverbRoom': reverbRoom,
+      'reverbDamping': reverbDamping,
+      'reverbWetMix': reverbWetMix,
+      'pitchEnabled': pitchEnabled,
+      'pitchSemitones': pitchSemitones,
+      'chorusEnabled': chorusEnabled,
+      'chorusDepth': chorusDepth,
+      'chorusRate': chorusRate,
+      'chorusWetMix': chorusWetMix,
+      'noiseGateEnabled': noiseGateEnabled,
+      'noiseGateThreshold': noiseGateThreshold,
+      'compressorEnabled': compressorEnabled,
+      'compressorThreshold': compressorThreshold,
+      'compressorRatio': compressorRatio,
+      'eqEnabled': eqEnabled,
+      'eqBass': eqBass,
+      'eqMid': eqMid,
+      'eqTreble': eqTreble,
+    };
+  }
+
+  factory MicFxSettings.fromMap(Map<String, dynamic> map) {
+    return MicFxSettings(
+      isEnabled: map['isEnabled'] as bool? ?? true,
+      inputGain: (map['inputGain'] as num?)?.toDouble() ?? 1.0,
+      echoEnabled: map['echoEnabled'] as bool? ?? false,
+      echoDelay: (map['echoDelay'] as num?)?.toDouble() ?? 250.0,
+      echoFeedback: (map['echoFeedback'] as num?)?.toDouble() ?? 0.3,
+      echoWetMix: (map['echoWetMix'] as num?)?.toDouble() ?? 0.4,
+      reverbEnabled: map['reverbEnabled'] as bool? ?? false,
+      reverbRoom: (map['reverbRoom'] as num?)?.toDouble() ?? 0.5,
+      reverbDamping: (map['reverbDamping'] as num?)?.toDouble() ?? 0.5,
+      reverbWetMix: (map['reverbWetMix'] as num?)?.toDouble() ?? 0.3,
+      pitchEnabled: map['pitchEnabled'] as bool? ?? false,
+      pitchSemitones: (map['pitchSemitones'] as num?)?.toDouble() ?? 0.0,
+      chorusEnabled: map['chorusEnabled'] as bool? ?? false,
+      chorusDepth: (map['chorusDepth'] as num?)?.toDouble() ?? 0.3,
+      chorusRate: (map['chorusRate'] as num?)?.toDouble() ?? 1.5,
+      chorusWetMix: (map['chorusWetMix'] as num?)?.toDouble() ?? 0.3,
+      noiseGateEnabled: map['noiseGateEnabled'] as bool? ?? false,
+      noiseGateThreshold: (map['noiseGateThreshold'] as num?)?.toDouble() ?? -40.0,
+      compressorEnabled: map['compressorEnabled'] as bool? ?? false,
+      compressorThreshold: (map['compressorThreshold'] as num?)?.toDouble() ?? -20.0,
+      compressorRatio: (map['compressorRatio'] as num?)?.toDouble() ?? 4.0,
+      eqEnabled: map['eqEnabled'] as bool? ?? false,
+      eqBass: (map['eqBass'] as num?)?.toDouble() ?? 0.0,
+      eqMid: (map['eqMid'] as num?)?.toDouble() ?? 0.0,
+      eqTreble: (map['eqTreble'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
 }
 
 class MediaFxSettings {

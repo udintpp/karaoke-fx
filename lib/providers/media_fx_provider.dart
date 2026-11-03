@@ -28,19 +28,22 @@ class MediaFxProvider extends ChangeNotifier {
   double _outputLevel = 0.0;
   bool _isExtractingYt = false;
 
-  // ─── System Audio FX State ──────────────────────────────────────────────────
+  // ─── System Audio FX & Background Service State ──────────────────────────
   int _systemVolume = 10;
   int _systemMaxVolume = 15;
 
   bool _systemEqEnabled = false;
   bool _systemBassBoostEnabled = false;
-  double _systemBassBoostStrength = 0.5; // 0.0 to 1.0
+  double _systemBassBoostStrength = 0.5;
 
   bool _systemVirtualizerEnabled = false;
-  double _systemVirtualizerStrength = 0.5; // 0.0 to 1.0
+  double _systemVirtualizerStrength = 0.5;
 
   bool _systemLoudnessEnabled = false;
-  double _systemLoudnessGain = 300; // 0 to 1000 mB
+  double _systemLoudnessGain = 300;
+
+  bool _backgroundServiceEnabled = false;
+  bool _autoStartOnBoot = true;
 
   // ─── Getters ────────────────────────────────────────────────────────────────
   MediaState get state => _state;
@@ -75,6 +78,9 @@ class MediaFxProvider extends ChangeNotifier {
   bool get systemLoudnessEnabled => _systemLoudnessEnabled;
   double get systemLoudnessGain => _systemLoudnessGain;
 
+  bool get backgroundServiceEnabled => _backgroundServiceEnabled;
+  bool get autoStartOnBoot => _autoStartOnBoot;
+
   double get progressValue {
     if (_duration.inMilliseconds == 0) return 0;
     return (_position.inMilliseconds / _duration.inMilliseconds).clamp(0, 1);
@@ -88,9 +94,24 @@ class MediaFxProvider extends ChangeNotifier {
 
   Future<void> initSystemAudioFx() async {
     await _systemFx.init();
+
     final vol = await _systemFx.getSystemVolume();
     _systemVolume = vol['current'] ?? 10;
     _systemMaxVolume = vol['max'] ?? 15;
+
+    // Restore saved settings from Android SharedPreferences
+    final saved = await _systemFx.getSavedPreferences();
+    _systemEqEnabled = saved['eqEnabled'] ?? false;
+    _systemBassBoostEnabled = saved['bassEnabled'] ?? false;
+    _systemBassBoostStrength = ((saved['bassStrength'] as num?)?.toDouble() ?? 500) / 1000.0;
+    _systemVirtualizerEnabled = saved['virtEnabled'] ?? false;
+    _systemVirtualizerStrength = ((saved['virtStrength'] as num?)?.toDouble() ?? 500) / 1000.0;
+    _systemLoudnessEnabled = saved['loudEnabled'] ?? false;
+    _systemLoudnessGain = (saved['loudGain'] as num?)?.toDouble() ?? 300.0;
+
+    _autoStartOnBoot = saved['autoStartOnBoot'] ?? true;
+    _backgroundServiceEnabled = await _systemFx.isForegroundServiceRunning();
+
     notifyListeners();
   }
 
@@ -125,6 +146,24 @@ class MediaFxProvider extends ChangeNotifier {
         notifyListeners();
       }
     });
+  }
+
+  // ─── Background Service & Auto Start Controls ─────────────────────────────
+
+  Future<void> toggleBackgroundService(bool enable) async {
+    _backgroundServiceEnabled = enable;
+    if (enable) {
+      await _systemFx.startForegroundService();
+    } else {
+      await _systemFx.stopForegroundService();
+    }
+    notifyListeners();
+  }
+
+  Future<void> toggleAutoStartOnBoot(bool enable) async {
+    _autoStartOnBoot = enable;
+    await _systemFx.setAutoStartOnBoot(enable);
+    notifyListeners();
   }
 
   // ─── System Media FX Controls (Android Global Audio Session) ───────────────

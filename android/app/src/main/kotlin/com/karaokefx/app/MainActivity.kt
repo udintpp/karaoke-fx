@@ -2,12 +2,14 @@ package com.karaokefx.app
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.AudioManager
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.BassBoost
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
+import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -20,6 +22,7 @@ class MainActivity : FlutterActivity() {
     private var virtualizer: Virtualizer? = null
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var audioManager: AudioManager? = null
+    private lateinit var prefs: SharedPreferences
 
     // AudioSession 0 targets the GLOBAL Android system audio output mix
     private val GLOBAL_AUDIO_SESSION = 0
@@ -27,14 +30,67 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        prefs = getSharedPreferences("KaraokeFxPrefs", Context.MODE_PRIVATE)
 
         initSystemAudioFx()
+        restoreSavedSettings()
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "init" -> {
                     initSystemAudioFx()
+                    restoreSavedSettings()
                     result.success(getEqualizerBandsInfo())
+                }
+                "getSavedPreferences" -> {
+                    val map = mapOf(
+                        "autoStartOnBoot" to prefs.getBoolean("auto_start_on_boot", true),
+                        "backgroundServiceEnabled" to KaraokeFxForegroundService.isRunning,
+                        "eqEnabled" to prefs.getBoolean("eq_enabled", false),
+                        "bassEnabled" to prefs.getBoolean("bass_enabled", false),
+                        "bassStrength" to prefs.getInt("bass_strength", 500),
+                        "virtEnabled" to prefs.getBoolean("virt_enabled", false),
+                        "virtStrength" to prefs.getInt("virt_strength", 500),
+                        "loudEnabled" to prefs.getBoolean("loud_enabled", false),
+                        "loudGain" to prefs.getInt("loud_gain", 300)
+                    )
+                    result.success(map)
+                }
+                "startForegroundService" -> {
+                    try {
+                        val intent = Intent(this, KaraokeFxForegroundService::class.java).apply {
+                            action = KaraokeFxForegroundService.ACTION_START
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            startForegroundService(intent)
+                        } else {
+                            startService(intent)
+                        }
+                        prefs.edit().putBoolean("background_service_enabled", true).apply()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SERVICE_ERROR", e.message, null)
+                    }
+                }
+                "stopForegroundService" -> {
+                    try {
+                        val intent = Intent(this, KaraokeFxForegroundService::class.java).apply {
+                            action = KaraokeFxForegroundService.ACTION_STOP
+                        }
+                        startService(intent)
+                        prefs.edit().putBoolean("background_service_enabled", false).apply()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SERVICE_ERROR", e.message, null)
+                    }
+                }
+                "isForegroundServiceRunning" -> {
+                    result.success(KaraokeFxForegroundService.isRunning)
+                }
+                "setAutoStartOnBoot" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    prefs.edit().putBoolean("auto_start_on_boot", enabled).apply()
+                    result.success(true)
                 }
                 "getSystemVolume" -> {
                     val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
@@ -44,6 +100,7 @@ class MainActivity : FlutterActivity() {
                 "setSystemVolume" -> {
                     val volume = call.argument<Int>("volume") ?: 0
                     audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
+                    prefs.edit().putInt("system_volume", volume).apply()
                     result.success(true)
                 }
                 "setEqualizerEnabled" -> {
@@ -51,6 +108,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (equalizer == null) initSystemAudioFx()
                         equalizer?.enabled = enabled
+                        prefs.edit().putBoolean("eq_enabled", enabled).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -62,6 +120,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (equalizer == null) initSystemAudioFx()
                         equalizer?.setBandLevel(band, level)
+                        prefs.edit().putInt("eq_band_$band", level.toInt()).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -72,6 +131,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (bassBoost == null) initSystemAudioFx()
                         bassBoost?.enabled = enabled
+                        prefs.edit().putBoolean("bass_enabled", enabled).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -82,6 +142,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (bassBoost == null) initSystemAudioFx()
                         bassBoost?.setStrength(strength)
+                        prefs.edit().putInt("bass_strength", strength.toInt()).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -92,6 +153,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (virtualizer == null) initSystemAudioFx()
                         virtualizer?.enabled = enabled
+                        prefs.edit().putBoolean("virt_enabled", enabled).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -102,6 +164,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (virtualizer == null) initSystemAudioFx()
                         virtualizer?.setStrength(strength)
+                        prefs.edit().putInt("virt_strength", strength.toInt()).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -112,6 +175,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (loudnessEnhancer == null) initSystemAudioFx()
                         loudnessEnhancer?.enabled = enabled
+                        prefs.edit().putBoolean("loud_enabled", enabled).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -122,6 +186,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         if (loudnessEnhancer == null) initSystemAudioFx()
                         loudnessEnhancer?.setTargetGain(gainMb)
+                        prefs.edit().putInt("loud_gain", gainMb).apply()
                         result.success(true)
                     } catch (e: Exception) {
                         result.error("FX_ERROR", e.message, null)
@@ -134,7 +199,6 @@ class MainActivity : FlutterActivity() {
 
     private fun initSystemAudioFx() {
         try {
-            // Attach audio effects to global audio session 0 (system-wide output)
             if (equalizer == null) {
                 equalizer = Equalizer(1000, GLOBAL_AUDIO_SESSION)
             }
@@ -148,7 +212,6 @@ class MainActivity : FlutterActivity() {
                 loudnessEnhancer = LoudnessEnhancer(GLOBAL_AUDIO_SESSION)
             }
 
-            // Notify Android system and other media players of our audio effect session
             val intent = Intent(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION).apply {
                 putExtra(AudioEffect.EXTRA_AUDIO_SESSION, GLOBAL_AUDIO_SESSION)
                 putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
@@ -160,16 +223,48 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun restoreSavedSettings() {
+        try {
+            val eqEnabled = prefs.getBoolean("eq_enabled", false)
+            equalizer?.enabled = eqEnabled
+            val eq = equalizer
+            if (eq != null) {
+                val numBands = eq.numberOfBands.toInt()
+                for (i in 0 until numBands) {
+                    val savedLevel = prefs.getInt("eq_band_$i", 0)
+                    eq.setBandLevel(i.toShort(), savedLevel.toShort())
+                }
+            }
+
+            val bassEnabled = prefs.getBoolean("bass_enabled", false)
+            val bassStrength = prefs.getInt("bass_strength", 500)
+            bassBoost?.enabled = bassEnabled
+            bassBoost?.setStrength(bassStrength.toShort())
+
+            val virtEnabled = prefs.getBoolean("virt_enabled", false)
+            val virtStrength = prefs.getInt("virt_strength", 500)
+            virtualizer?.enabled = virtEnabled
+            virtualizer?.setStrength(virtStrength.toShort())
+
+            val loudEnabled = prefs.getBoolean("loud_enabled", false)
+            val loudGain = prefs.getInt("loud_gain", 300)
+            loudnessEnhancer?.enabled = loudEnabled
+            loudnessEnhancer?.setTargetGain(loudGain)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun getEqualizerBandsInfo(): Map<String, Any> {
         val bands = mutableListOf<Map<String, Any>>()
         val eq = equalizer ?: return emptyMap()
 
         try {
             val numBands = eq.numberOfBands.toInt()
-            val levelRange = eq.bandLevelRange // [min, max] in millibels
+            val levelRange = eq.bandLevelRange
             for (i in 0 until numBands) {
                 val bandIndex = i.toShort()
-                val centerFreq = eq.getCenterFreq(bandIndex) // in milliHertz
+                val centerFreq = eq.getCenterFreq(bandIndex)
                 val currentLevel = eq.getBandLevel(bandIndex)
                 bands.add(mapOf(
                     "index" to i,
@@ -190,19 +285,22 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            val intent = Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
-                putExtra(AudioEffect.EXTRA_AUDIO_SESSION, GLOBAL_AUDIO_SESSION)
-                putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
-            }
-            sendBroadcast(intent)
+        // If foreground service is NOT running, release effects and close session
+        if (!KaraokeFxForegroundService.isRunning) {
+            try {
+                val intent = Intent(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION).apply {
+                    putExtra(AudioEffect.EXTRA_AUDIO_SESSION, GLOBAL_AUDIO_SESSION)
+                    putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                }
+                sendBroadcast(intent)
 
-            equalizer?.release()
-            bassBoost?.release()
-            virtualizer?.release()
-            loudnessEnhancer?.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
+                equalizer?.release()
+                bassBoost?.release()
+                virtualizer?.release()
+                loudnessEnhancer?.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 }

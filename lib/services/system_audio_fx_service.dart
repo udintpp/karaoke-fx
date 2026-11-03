@@ -30,8 +30,8 @@ class SystemAudioFxService {
   factory SystemAudioFxService() => _instance;
   SystemAudioFxService._internal();
 
-  int minLevelMb = -1500; // -15 dB default
-  int maxLevelMb = 1500;  // +15 dB default
+  int minLevelMb = -1500;
+  int maxLevelMb = 1500;
   List<SystemEqBand> bands = [];
 
   Future<void> init() async {
@@ -52,6 +52,53 @@ class SystemAudioFxService {
           }).toList();
         }
       }
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>> getSavedPreferences() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('getSavedPreferences');
+      if (res != null) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (_) {}
+    return {
+      'autoStartOnBoot': true,
+      'backgroundServiceEnabled': false,
+      'eqEnabled': false,
+      'bassEnabled': false,
+      'bassStrength': 500,
+      'virtEnabled': false,
+      'virtStrength': 500,
+      'loudEnabled': false,
+      'loudGain': 300,
+    };
+  }
+
+  Future<void> startForegroundService() async {
+    try {
+      await _channel.invokeMethod('startForegroundService');
+    } catch (_) {}
+  }
+
+  Future<void> stopForegroundService() async {
+    try {
+      await _channel.invokeMethod('stopForegroundService');
+    } catch (_) {}
+  }
+
+  Future<bool> isForegroundServiceRunning() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('isForegroundServiceRunning');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> setAutoStartOnBoot(bool enabled) async {
+    try {
+      await _channel.invokeMethod('setAutoStartOnBoot', {'enabled': enabled});
     } catch (_) {}
   }
 

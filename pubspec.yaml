@@ -23,8 +23,9 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.0
 
-  # State Management
+  # State Management & Storage
   provider: ^6.1.2
+  shared_preferences: ^2.3.2
 
   # File picker
   file_picker: ^8.1.2
