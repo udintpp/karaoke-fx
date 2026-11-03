@@ -43,8 +43,8 @@ android {
 
     defaultConfig {
         applicationId "com.karaokefx.app"
-        // Minimum SDK for flutter_sound and modern audio APIs
-        minSdk = 23
+        // Minimum SDK for flutter_sound (requires API 24+)
+        minSdk = 24
         targetSdk = 35
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
