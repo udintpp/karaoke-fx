@@ -141,7 +141,9 @@ class WirelessReceiverService {
       final tempDir = await getTemporaryDirectory();
       final targetFile = File('${tempDir.path}/$fileName');
       final sink = targetFile.openWrite();
-      await request.pipe(sink);
+      await for (final chunk in request) {
+        sink.add(chunk);
+      }
       await sink.flush();
       await sink.close();
 
