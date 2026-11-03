@@ -1,0 +1,53 @@
+name: karaoke_fx
+description: Professional Karaoke FX App - Mic & Media Audio Effects
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Audio Core
+  flutter_sound: ^9.2.13
+  just_audio: ^0.9.38
+  audio_session: ^0.1.18
+
+  # Permissions
+  permission_handler: ^11.3.0
+
+  # UI
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.2.1
+  flutter_animate: ^4.5.0
+
+  # State Management
+  provider: ^6.1.2
+
+  # File picker
+  file_picker: ^8.1.2
+
+  # YouTube support
+  youtube_explode_dart: ^2.3.0   # Extract YouTube audio stream URL
+  webview_flutter: ^4.10.0        # Embed YouTube video (visual karaoke)
+  youtube_player_iframe: ^5.2.0   # Official YouTube IFrame player (video display)
+
+  # Networking
+  http: ^1.2.1
+  cached_network_image: ^3.4.1
+
+  # Utils
+  path_provider: ^2.1.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/

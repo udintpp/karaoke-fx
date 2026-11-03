@@ -1,0 +1,68 @@
+name: Build Karaoke FX APK
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 🐦 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: 📦 Get dependencies
+        run: flutter pub get
+
+      - name: 🔍 Analyze code
+        run: flutter analyze --no-fatal-infos
+        continue-on-error: true
+
+      - name: 🏗️ Build Debug APK
+        run: flutter build apk --debug --no-tree-shake-icons
+
+      - name: 📤 Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: karaoke-fx-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
+
+      # Optional: Build Release APK (uncomment & add signing keys to secrets)
+      # - name: 🏗️ Build Release APK
+      #   run: flutter build apk --release --no-tree-shake-icons
+      #   env:
+      #     KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      #     KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      #     KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      #
+      # - name: 📤 Upload Release APK
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: karaoke-fx-release-apk
+      #     path: build/app/outputs/flutter-apk/app-release.apk
+      #     retention-days: 30
+
+      - name: ✅ Build Info
+        run: |
+          echo "✅ Build completed!"
+          echo "📁 APK location: build/app/outputs/flutter-apk/"
+          ls -lh build/app/outputs/flutter-apk/ || true
