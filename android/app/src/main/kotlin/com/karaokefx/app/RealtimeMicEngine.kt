@@ -27,7 +27,7 @@ class RealtimeMicEngine private constructor() {
     companion object {
         private const val TAG = "RealtimeMicEngine"
         private const val SAMPLE_RATE = 44100
-        private const val CHUNK_SIZE = 512 // ~11.6ms latency at 44.1kHz
+        private const val CHUNK_SIZE = 256 // ~5.8ms ultra-low latency FastMixer path
 
         @Volatile
         private var instance: RealtimeMicEngine? = null
@@ -41,8 +41,6 @@ class RealtimeMicEngine private constructor() {
 
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
-    private var echoCanceler: AcousticEchoCanceler? = null
-    private var noiseSuppressor: NoiseSuppressor? = null
 
     private var workerThread: Thread? = null
     @Volatile
@@ -50,7 +48,7 @@ class RealtimeMicEngine private constructor() {
 
     // ─── DSP Control Parameters (Thread-safe) ─────────────────────────────
     @Volatile var isEnabled: Boolean = true
-    @Volatile var inputGain: Float = 1.0f
+    @Volatile var inputGain: Float = 1.5f
 
     // Noise Gate
     @Volatile var noiseGateEnabled: Boolean = false
@@ -112,25 +110,37 @@ class RealtimeMicEngine private constructor() {
     // Pitch / Robot oscillator phase
     private var robotPhase = 0.0
 
-    // AudioManager reference — injected by MainActivity so we can set audio mode
+    // AudioManager reference — injected by MainActivity
     var audioManager: AudioManager? = null
+
+    // High-Pass Filter (Low-Cut @ 85Hz) state to filter mechanical chassis rumble & bass speaker bleed
+    private var hpfPrevIn = 0.0f
+    private var hpfPrevOut = 0.0f
+    private val HPF_ALPHA = 0.9880f
 
     @Synchronized
     fun start(): Boolean {
         if (isRunning) return true
 
         try {
+            // Keep normal audio mode — DO NOT use MODE_IN_COMMUNICATION as it routes audio
+            // through Android's slow telephony VoIP HAL which adds 150-250ms delay and mutes mic sensitivity.
+            try {
+                audioManager?.mode = AudioManager.MODE_NORMAL
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not set MODE_NORMAL: ${e.message}")
+            }
+
             val minRecBuf = AudioRecord.getMinBufferSize(
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT
             )
-            val recBufSize = max(minRecBuf, CHUNK_SIZE * 4)
+            val recBufSize = max(minRecBuf, CHUNK_SIZE * 2)
 
-            // VOICE_COMMUNICATION: Android routes the AEC hardware reference signal correctly
-            // so music playing simultaneously is NOT picked up by the mic.
+            // AudioSource.MIC provides pure, ultra-sensitive hardware capture without telephony ducking
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.MIC,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -138,51 +148,9 @@ class RealtimeMicEngine private constructor() {
             )
 
             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                // Fallback to plain MIC if VOICE_COMMUNICATION fails on this device
-                Log.w(TAG, "VOICE_COMMUNICATION source failed, falling back to MIC")
-                audioRecord?.release()
-                audioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    recBufSize
-                )
-                if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.e(TAG, "AudioRecord initialization failed!")
-                    stop()
-                    return false
-                }
-            }
-
-            // Set audio mode so Android hardware AEC gets the speaker output as reference signal.
-            // MODE_IN_COMMUNICATION tells the audio HAL: "mic and speaker are active simultaneously,
-            // please suppress the speaker signal from what the mic captures."
-            try {
-                audioManager?.mode = AudioManager.MODE_IN_COMMUNICATION
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not set MODE_IN_COMMUNICATION: ${e.message}")
-            }
-
-            // Attach hardware Acoustic Echo Canceler — works best with VOICE_COMMUNICATION source
-            val sessionId = audioRecord?.audioSessionId ?: 0
-            if (AcousticEchoCanceler.isAvailable()) {
-                try {
-                    echoCanceler = AcousticEchoCanceler.create(sessionId)
-                    echoCanceler?.enabled = true
-                    Log.i(TAG, "AcousticEchoCanceler enabled (session $sessionId)")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not enable AcousticEchoCanceler: ${e.message}")
-                }
-            }
-
-            if (NoiseSuppressor.isAvailable()) {
-                try {
-                    noiseSuppressor = NoiseSuppressor.create(sessionId)
-                    noiseSuppressor?.enabled = true
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not enable NoiseSuppressor: ${e.message}")
-                }
+                Log.e(TAG, "AudioRecord initialization failed!")
+                stop()
+                return false
             }
 
             val minTrackBuf = AudioTrack.getMinBufferSize(
@@ -190,13 +158,12 @@ class RealtimeMicEngine private constructor() {
                 AudioFormat.CHANNEL_OUT_MONO,
                 AudioFormat.ENCODING_PCM_16BIT
             )
-            val trackBufSize = max(minTrackBuf, CHUNK_SIZE * 4)
+            val trackBufSize = max(minTrackBuf, CHUNK_SIZE * 2)
 
-            // USAGE_VOICE_COMMUNICATION pairs with VOICE_COMMUNICATION source so the audio HAL
-            // knows the exact playback path and can subtract it from the mic signal (AEC reference).
+            // USAGE_MEDIA + CONTENT_TYPE_MUSIC activates Android's hardware FastMixer (ultra low latency)
             val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build()
 
             val audioFormat = AudioFormat.Builder()
@@ -219,6 +186,12 @@ class RealtimeMicEngine private constructor() {
                 return false
             }
 
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                try {
+                    audioTrack?.setBufferSizeInFrames(CHUNK_SIZE * 2)
+                } catch (_: Exception) {}
+            }
+
             audioRecord?.startRecording()
             audioTrack?.play()
 
@@ -232,7 +205,7 @@ class RealtimeMicEngine private constructor() {
                 start()
             }
 
-            Log.i(TAG, "RealtimeMicEngine started (SampleRate: $SAMPLE_RATE, Chunk: $CHUNK_SIZE, AEC: ${echoCanceler?.enabled})")
+            Log.i(TAG, "RealtimeMicEngine started (SampleRate: $SAMPLE_RATE, Chunk: $CHUNK_SIZE, Low-Latency FastMixer)")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Error starting RealtimeMicEngine: ${e.message}", e)
@@ -250,16 +223,6 @@ class RealtimeMicEngine private constructor() {
         } catch (_: Exception) {}
 
         try {
-            echoCanceler?.release()
-            echoCanceler = null
-        } catch (_: Exception) {}
-
-        try {
-            noiseSuppressor?.release()
-            noiseSuppressor = null
-        } catch (_: Exception) {}
-
-        try {
             audioRecord?.stop()
             audioRecord?.release()
             audioRecord = null
@@ -272,6 +235,8 @@ class RealtimeMicEngine private constructor() {
         } catch (_: Exception) {}
 
         liveVuLevel = 0.0f
+        hpfPrevIn = 0.0f
+        hpfPrevOut = 0.0f
         Log.i(TAG, "RealtimeMicEngine stopped")
     }
 
@@ -279,7 +244,7 @@ class RealtimeMicEngine private constructor() {
 
     fun updateSettings(map: Map<String, Any?>) {
         (map["isEnabled"] as? Boolean)?.let { isEnabled = it }
-        (map["inputGain"] as? Number)?.let { inputGain = it.toFloat().coerceIn(0f, 3.0f) }
+        (map["inputGain"] as? Number)?.let { inputGain = it.toFloat().coerceIn(0f, 5.0f) }
 
         // Echo
         (map["echoEnabled"] as? Boolean)?.let { echoEnabled = it }
@@ -334,9 +299,10 @@ class RealtimeMicEngine private constructor() {
             }
 
             val rms = kotlin.math.sqrt((sumSquare / readCount).toDouble()).toFloat()
-            val instantDb = if (rms > 0.00001f) (20.0 * log10(rms.toDouble())).toFloat().coerceIn(-60f, 0f) else -60f
-            val rawVu = ((instantDb + 60f) / 60f).coerceIn(0f, 1f)
-            liveVuLevel = liveVuLevel * 0.7f + rawVu * 0.3f
+            // Highly sensitive & dynamic VU level
+            val instantDb = if (rms > 0.000005f) (20.0 * log10(rms.toDouble())).toFloat().coerceIn(-60f, 0f) else -60f
+            val rawVu = ((instantDb + 55f) / 55f).coerceIn(0f, 1f)
+            liveVuLevel = liveVuLevel * 0.6f + rawVu * 0.4f
 
             // If mic output is disabled, silence output
             if (!isEnabled) {
@@ -344,9 +310,10 @@ class RealtimeMicEngine private constructor() {
                 continue
             }
 
-            // 2. Noise Gate logic
+            // 2. Responsive Noise Gate: fast attack (2ms) so words aren't cut, smooth release (35ms)
             val gateTarget = if (!noiseGateEnabled || instantDb >= noiseGateThresholdDb) 1.0f else 0.0f
-            currentGateGain += (gateTarget - currentGateGain) * 0.15f
+            val gateSpeed = if (gateTarget > currentGateGain) 0.35f else 0.06f
+            currentGateGain += (gateTarget - currentGateGain) * gateSpeed
 
             // 3. DSP Effects Chain
             val gain = inputGain
@@ -373,7 +340,12 @@ class RealtimeMicEngine private constructor() {
             val semitones = pitchSemitones
 
             for (i in 0 until readCount) {
-                var s = floatBuf[i] * gain * currentGateGain
+                // High-Pass Filter (Low-Cut @ 85Hz) removes speaker rumble / mechanical vibration without hurting vocals
+                val hpfOut = HPF_ALPHA * (hpfPrevOut + floatBuf[i] - hpfPrevIn)
+                hpfPrevIn = floatBuf[i]
+                hpfPrevOut = hpfOut
+
+                var s = hpfOut * gain * currentGateGain
 
                 // EQ Filtering (Low shelf ~300Hz, High shelf ~3500Hz, Mid)
                 if (isEq) {

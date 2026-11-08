@@ -37,10 +37,10 @@ class MicFxScreen extends StatelessWidget {
               // Section: Input
               _SectionLabel('🎤 Input', color: AppTheme.micColor),
               FxSlider(
-                label: 'Input Gain',
+                label: 'Sensitivitas Mic (Gain)',
                 value: mic.settings.inputGain,
                 min: 0.0,
-                max: 2.0,
+                max: 4.0,
                 unit: 'x',
                 color: AppTheme.micColor,
                 onChanged: (v) => mic.updateSettings(

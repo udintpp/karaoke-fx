@@ -44,7 +44,7 @@ class MicFxSettings {
 
   MicFxSettings({
     this.isEnabled = true,
-    this.inputGain = 1.0,
+    this.inputGain = 1.5,
     this.echoEnabled = false,
     this.echoDelay = 250,
     this.echoFeedback = 0.3,
