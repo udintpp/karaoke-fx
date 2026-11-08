@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -9,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../models/camera_effects.dart';
 import '../models/recording_item.dart';
+import '../services/camera_bg_remover_service.dart';
 import '../services/system_audio_fx_service.dart';
 
 enum RecordingMode { video, audioOnly }
@@ -16,13 +16,16 @@ enum RecordState { idle, recording, processing, error }
 
 class RecordProvider extends ChangeNotifier {
   final SystemAudioFxService _audioService = SystemAudioFxService();
+  final CameraBgRemoverService _cameraService = CameraBgRemoverService();
   final AudioPlayer _playbackPlayer = AudioPlayer();
 
-  // Camera State
-  CameraController? _cameraController;
-  List<CameraDescription> _availableCameras = [];
-  int _selectedCameraIndex = 0;
+  // Native Camera State
+  int? _textureId;
+  int _previewWidth = 720;
+  int _previewHeight = 960;
   bool _isCameraInitialized = false;
+  bool _isFrontCamera = true;
+  bool _hasMultipleCameras = true;
   bool _isFlashOn = false;
 
   // Recording State
@@ -31,12 +34,13 @@ class RecordProvider extends ChangeNotifier {
   int _recordingSeconds = 0;
   Timer? _timer;
   String? _errorMessage;
+  String? _currentRecordingVideoPath;
 
   // AI Filters, Backdrops, and Background Cutout
-  CameraAiFilter _selectedFilter = CameraAiFilter.allFilters.first;
-  StudioBackdrop _selectedBackdrop = StudioBackdrop.presets[1]; // Default: Panggung Konser
+  CameraAiFilter _selectedFilter = CameraAiFilter.allFilters[1]; // Default: AI Beauty & Glow
+  StudioBackdrop _selectedBackdrop = StudioBackdrop.presets[1]; // Default: Panggung Konser Megah
   double _backdropOpacity = 1.0;
-  CutoutMode _cutoutMode = CutoutMode.stageSpotlight; // Default: AI Spotlight Cutout (Hapus ruangan sekitar orang)
+  CutoutMode _cutoutMode = CutoutMode.aiPersonCutout; // Default: AI Background Remover
   double _cutoutSensitivity = 0.65;
 
   // Saved Recordings
@@ -44,11 +48,23 @@ class RecordProvider extends ChangeNotifier {
   String? _currentlyPlayingId;
   bool _isPlayingPlayback = false;
 
+  // Video Playback Modal State
+  int? _playbackVideoTextureId;
+  int _playbackVideoWidth = 720;
+  int _playbackVideoHeight = 960;
+  bool _isPlayingVideo = false;
+  int _videoDurationMs = 0;
+  int _videoPositionMs = 0;
+  Timer? _videoProgressTimer;
+
   // Getters
-  CameraController? get cameraController => _cameraController;
+  int? get textureId => _textureId;
+  int get previewWidth => _previewWidth;
+  int get previewHeight => _previewHeight;
   bool get isCameraInitialized => _isCameraInitialized;
+  bool get isFrontCamera => _isFrontCamera;
+  bool get hasMultipleCameras => _hasMultipleCameras;
   bool get isFlashOn => _isFlashOn;
-  bool get hasMultipleCameras => _availableCameras.length > 1;
 
   RecordingMode get mode => _mode;
   RecordState get state => _state;
@@ -65,6 +81,13 @@ class RecordProvider extends ChangeNotifier {
   List<RecordingItem> get savedRecordings => _savedRecordings;
   String? get currentlyPlayingId => _currentlyPlayingId;
   bool get isPlayingPlayback => _isPlayingPlayback;
+
+  int? get playbackVideoTextureId => _playbackVideoTextureId;
+  int get playbackVideoWidth => _playbackVideoWidth;
+  int get playbackVideoHeight => _playbackVideoHeight;
+  bool get isPlayingVideo => _isPlayingVideo;
+  int get videoDurationMs => _videoDurationMs;
+  int get videoPositionMs => _videoPositionMs;
 
   String get formattedRecordingTime {
     final m = (_recordingSeconds ~/ 60).toString().padLeft(2, '0');
@@ -90,9 +113,9 @@ class RecordProvider extends ChangeNotifier {
     });
   }
 
-  // ─── Camera Management ────────────────────────────────────────────────
+  // ─── Native Camera Management ──────────────────────────────────────────
   Future<void> initCamera() async {
-    if (_isCameraInitialized) return;
+    if (_isCameraInitialized && _textureId != null) return;
 
     try {
       final camStatus = await Permission.camera.request();
@@ -104,23 +127,27 @@ class RecordProvider extends ChangeNotifier {
         return;
       }
 
-      _availableCameras = await availableCameras();
-      if (_availableCameras.isEmpty) {
-        _errorMessage = 'Tidak ada sensor kamera terdeteksi di perangkat.';
+      final info = await _cameraService.initCamera(preferFront: true);
+      if (info != null && info['textureId'] != null) {
+        _textureId = info['textureId'] as int;
+        _previewWidth = info['width'] as int? ?? 720;
+        _previewHeight = info['height'] as int? ?? 960;
+        _hasMultipleCameras = info['hasMultipleCameras'] as bool? ?? true;
+        _isFrontCamera = info['isFrontCamera'] as bool? ?? true;
+        _isCameraInitialized = true;
+        _errorMessage = null;
+
+        // Sync initial effect state to OpenGL ES engine
+        await _cameraService.setCutoutMode(_cutoutMode.name, _cutoutSensitivity);
+        await _cameraService.setColorFilter(_selectedFilter.matrix, _selectedFilter.isBeauty);
+        _syncBackdropToNative();
+
         notifyListeners();
-        return;
+      } else {
+        _errorMessage = 'Gagal inisialisasi surface kamera native.';
+        _isCameraInitialized = false;
+        notifyListeners();
       }
-
-      // Default to front camera for selfie karaoke if available
-      int frontCamIndex = _availableCameras.indexWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-      );
-      _selectedCameraIndex = frontCamIndex != -1 ? frontCamIndex : 0;
-
-      await _setupCameraController(_availableCameras[_selectedCameraIndex]);
-      _isCameraInitialized = true;
-      _errorMessage = null;
-      notifyListeners();
     } catch (e) {
       _errorMessage = 'Gagal inisialisasi kamera: $e';
       _isCameraInitialized = false;
@@ -128,38 +155,29 @@ class RecordProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _setupCameraController(CameraDescription description) async {
-    await _cameraController?.dispose();
-    _cameraController = CameraController(
-      description,
-      ResolutionPreset.high,
-      enableAudio: true,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-
-    await _cameraController?.initialize();
-    _isFlashOn = false;
-  }
-
   Future<void> switchCamera() async {
-    if (_availableCameras.length <= 1) return;
-    _selectedCameraIndex = (_selectedCameraIndex + 1) % _availableCameras.length;
-    await _setupCameraController(_availableCameras[_selectedCameraIndex]);
-    notifyListeners();
+    if (!_hasMultipleCameras) return;
+    try {
+      final isFront = await _cameraService.switchCamera();
+      _isFrontCamera = isFront;
+      _isFlashOn = false;
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Gagal ganti kamera: $e';
+      notifyListeners();
+    }
   }
 
   Future<void> toggleFlash() async {
-    if (_cameraController == null || !_isCameraInitialized) return;
     try {
-      if (_isFlashOn) {
-        await _cameraController!.setFlashMode(FlashMode.off);
-        _isFlashOn = false;
-      } else {
-        await _cameraController!.setFlashMode(FlashMode.torch);
-        _isFlashOn = true;
-      }
+      final active = await _cameraService.setFlash(!_isFlashOn);
+      _isFlashOn = active;
       notifyListeners();
     } catch (_) {}
+  }
+
+  Future<void> tapToFocus(double nx, double ny) async {
+    await _cameraService.tapToFocus(nx, ny);
   }
 
   // ─── Filter & Backdrop Selection ──────────────────────────────────────
@@ -170,11 +188,13 @@ class RecordProvider extends ChangeNotifier {
 
   void setFilter(CameraAiFilter filter) {
     _selectedFilter = filter;
+    _cameraService.setColorFilter(filter.matrix, filter.isBeauty);
     notifyListeners();
   }
 
   void setBackdrop(StudioBackdrop backdrop) {
     _selectedBackdrop = backdrop;
+    _syncBackdropToNative();
     notifyListeners();
   }
 
@@ -185,15 +205,27 @@ class RecordProvider extends ChangeNotifier {
 
   void setCutoutMode(CutoutMode mode) {
     _cutoutMode = mode;
+    _cameraService.setCutoutMode(mode.name, _cutoutSensitivity);
     notifyListeners();
   }
 
   void setCutoutSensitivity(double sensitivity) {
-    _cutoutSensitivity = sensitivity.clamp(0.1, 1.0);
+    _cutoutSensitivity = sensitivity.clamp(0.05, 1.0);
+    _cameraService.setCutoutMode(_cutoutMode.name, _cutoutSensitivity);
     notifyListeners();
   }
 
-  Future<void> pickCustomBackdrop() async {
+  void _syncBackdropToNative() {
+    _cameraService.setBackdropMedia(
+      mediaType: _selectedBackdrop.mediaType,
+      sourceKind: _selectedBackdrop.sourceKind,
+      pathOrKey: _selectedBackdrop.pathOrKey,
+      motionType: _selectedBackdrop.motionType,
+      gradientColors: _selectedBackdrop.gradientColors.map((c) => c.value).toList(),
+    );
+  }
+
+  Future<void> pickCustomBackdropImage() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
@@ -206,13 +238,45 @@ class RecordProvider extends ChangeNotifier {
           type: BackdropType.customLocal,
           title: result.files.single.name,
           icon: Icons.image_rounded,
-          gradientColors: [const Color(0xFF1E1E2E), const Color(0xFF11111B)],
+          mediaType: 'image',
+          sourceKind: 'file',
+          pathOrKey: path,
+          gradientColors: const [Color(0xFF1E1E2E), Color(0xFF11111B)],
           localFilePath: path,
         );
+        _syncBackdropToNative();
         notifyListeners();
       }
     } catch (e) {
       _errorMessage = 'Gagal memilih gambar dari galeri: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> pickCustomBackdropVideo() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final path = result.files.single.path!;
+        _selectedBackdrop = StudioBackdrop(
+          type: BackdropType.customLocal,
+          title: result.files.single.name,
+          icon: Icons.videocam_rounded,
+          mediaType: 'video',
+          sourceKind: 'file',
+          pathOrKey: path,
+          gradientColors: const [Color(0xFF1E1E2E), Color(0xFF11111B)],
+          localFilePath: path,
+        );
+        _syncBackdropToNative();
+        notifyListeners();
+      }
+    } catch (e) {
+      _errorMessage = 'Gagal memilih video dari galeri: $e';
       notifyListeners();
     }
   }
@@ -226,13 +290,19 @@ class RecordProvider extends ChangeNotifier {
       _recordingSeconds = 0;
 
       if (_mode == RecordingMode.video) {
-        // Video recording with camera
-        if (_cameraController == null || !_cameraController!.value.isInitialized) {
+        if (!_isCameraInitialized || _textureId == null) {
           await initCamera();
         }
 
-        if (_cameraController != null && _cameraController!.value.isInitialized) {
-          await _cameraController!.startVideoRecording();
+        if (_isCameraInitialized) {
+          final dir = await _getVideoRecordingsDir();
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final targetPath = '${dir.path}/Karaoke_Video_$timestamp.mp4';
+          final success = await _cameraService.startVideoRecording(targetPath);
+          if (!success) {
+            throw Exception('Gagal memulai perekaman video MP4 composited');
+          }
+          _currentRecordingVideoPath = targetPath;
         } else {
           throw Exception('Kamera belum siap merekam');
         }
@@ -274,15 +344,9 @@ class RecordProvider extends ChangeNotifier {
     String? savedFilePath;
     try {
       if (_mode == RecordingMode.video) {
-        if (_cameraController != null && _cameraController!.value.isRecordingVideo) {
-          final xfile = await _cameraController!.stopVideoRecording();
-          final dir = await _getVideoRecordingsDir();
-          final timestamp = DateTime.now().millisecondsSinceEpoch;
-          final targetPath = '${dir.path}/Karaoke_Video_$timestamp.mp4';
-          final savedFile = await File(xfile.path).copy(targetPath);
-          savedFilePath = savedFile.path;
-          try { await File(xfile.path).delete(); } catch (_) {}
-        }
+        savedFilePath = await _cameraService.stopVideoRecording();
+        savedFilePath ??= _currentRecordingVideoPath;
+        _currentRecordingVideoPath = null;
       } else {
         savedFilePath = await _audioService.stopAudioRecording();
       }
@@ -303,7 +367,8 @@ class RecordProvider extends ChangeNotifier {
   Future<Directory> _getAudioRecordingsDir() async {
     try {
       final extDir = Directory('/storage/emulated/0/Music/KaraokeFX');
-      if (await extDir.exists() || await extDir.create(recursive: true).then((_) => true).catchError((_) => false)) {
+      if (await extDir.exists() ||
+          await extDir.create(recursive: true).then((_) => true).catchError((_) => false)) {
         return extDir;
       }
     } catch (_) {}
@@ -316,7 +381,8 @@ class RecordProvider extends ChangeNotifier {
   Future<Directory> _getVideoRecordingsDir() async {
     try {
       final extDir = Directory('/storage/emulated/0/Movies/KaraokeFX');
-      if (await extDir.exists() || await extDir.create(recursive: true).then((_) => true).catchError((_) => false)) {
+      if (await extDir.exists() ||
+          await extDir.create(recursive: true).then((_) => true).catchError((_) => false)) {
         return extDir;
       }
     } catch (_) {}
@@ -374,7 +440,7 @@ class RecordProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> playRecording(RecordingItem item) async {
+  Future<void> playAudioRecording(RecordingItem item) async {
     try {
       if (_currentlyPlayingId == item.id && _isPlayingPlayback) {
         await _playbackPlayer.pause();
@@ -386,7 +452,7 @@ class RecordProvider extends ChangeNotifier {
       await _playbackPlayer.play();
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Gagal memutar rekaman: $e';
+      _errorMessage = 'Gagal memutar audio: $e';
       notifyListeners();
     }
   }
@@ -394,6 +460,62 @@ class RecordProvider extends ChangeNotifier {
   Future<void> stopPlayback() async {
     await _playbackPlayer.stop();
     _currentlyPlayingId = null;
+    notifyListeners();
+  }
+
+  // ─── Native Recorded MP4 Video Playback ────────────────────────────────
+  Future<void> startRecordedVideoPlayback(String filePath) async {
+    try {
+      await stopPlayback();
+      await stopRecordedVideoPlayback();
+
+      final info = await _cameraService.playRecordedVideo(filePath);
+      if (info != null && info['textureId'] != null) {
+        _playbackVideoTextureId = info['textureId'] as int;
+        _playbackVideoWidth = info['videoWidth'] as int? ?? 720;
+        _playbackVideoHeight = info['videoHeight'] as int? ?? 960;
+        _videoDurationMs = info['durationMs'] as int? ?? 0;
+        _isPlayingVideo = true;
+
+        _videoProgressTimer?.cancel();
+        _videoProgressTimer =
+            Timer.periodic(const Duration(milliseconds: 250), (_) async {
+          final posInfo = await _cameraService.getRecordedVideoPosition();
+          _videoPositionMs = posInfo['positionMs'] as int? ?? 0;
+          _isPlayingVideo = posInfo['isPlaying'] as bool? ?? false;
+          notifyListeners();
+        });
+
+        notifyListeners();
+      }
+    } catch (e) {
+      _errorMessage = 'Gagal memutar video: $e';
+      notifyListeners();
+    }
+  }
+
+  Future<void> toggleRecordedVideoPause() async {
+    try {
+      final isPlaying = await _cameraService.toggleRecordedVideoPause();
+      _isPlayingVideo = isPlaying;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> seekRecordedVideo(int positionMs) async {
+    await _cameraService.seekRecordedVideo(positionMs);
+    _videoPositionMs = positionMs;
+    notifyListeners();
+  }
+
+  Future<void> stopRecordedVideoPlayback() async {
+    _videoProgressTimer?.cancel();
+    _videoProgressTimer = null;
+    await _cameraService.stopRecordedVideo();
+    _playbackVideoTextureId = null;
+    _isPlayingVideo = false;
+    _videoPositionMs = 0;
+    _videoDurationMs = 0;
     notifyListeners();
   }
 
@@ -414,8 +536,9 @@ class RecordProvider extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
-    _cameraController?.dispose();
+    _videoProgressTimer?.cancel();
     _playbackPlayer.dispose();
+    _cameraService.disposeCamera();
     super.dispose();
   }
 }

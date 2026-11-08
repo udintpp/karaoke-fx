@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:camera/camera.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../providers/record_provider.dart';
@@ -41,7 +40,7 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
               _buildTopBar(context, rec),
               const SizedBox(height: 12),
 
-              // Main Preview Area (Video Camera + Stage Backdrop or Audio Studio)
+              // Main Preview Area (Composited Camera + Stage Backdrop or Audio Studio)
               rec.mode == RecordingMode.video
                   ? _buildCameraStudioStage(context, rec, mic)
                   : _buildAudioStudioStage(context, rec, mic),
@@ -56,8 +55,9 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
               if (rec.mode == RecordingMode.video) ...[
                 // Background Cutout Section (Person Only)
                 _buildSectionHeader(
-                  title: '🎭 Hapus Background (Hanya Orangnya Saja)',
-                  subtitle: 'Hilangkan latar ruangan asli & ganti dengan panggung konser atau galeri',
+                  title: '🎭 Hapus Background (AI Background Remover)',
+                  subtitle:
+                      'Isolasi tubuh orang secara real-time & ganti ruangan dengan media gambar atau video',
                 ),
                 const SizedBox(height: 8),
                 _buildCutoutModesList(rec),
@@ -68,7 +68,8 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
 
                 _buildSectionHeader(
                   title: '✨ Efek Kamera AI & Stage Lighting',
-                  subtitle: 'Filter kecantikan & pencahayaan panggung real-time',
+                  subtitle:
+                      'Filter kecantikan wajah (skin glow) & pencahayaan panggung konser',
                 ),
                 const SizedBox(height: 8),
                 _buildAiFiltersList(rec),
@@ -76,15 +77,12 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
 
                 // Background Studio & Backdrop Section
                 _buildSectionHeader(
-                  title: '🖼️ Background Studio & Panggung',
-                  subtitle: 'Pilih latar panggung bawaan atau unggah dari galeri lokal',
+                  title: '🖼️ Background Panggung (Gambar / Video)',
+                  subtitle:
+                      'Pilih panggung bawaan atau unggah foto/video animasi dari galeri',
                 ),
                 const SizedBox(height: 8),
                 _buildBackdropsList(rec),
-                const SizedBox(height: 12),
-
-                // Backdrop Opacity Slider
-                _buildBackdropOpacitySlider(rec),
               ],
             ],
           ),
@@ -147,234 +145,187 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
 
   Widget _buildCameraStudioStage(
       BuildContext context, RecordProvider rec, MicFxProvider mic) {
-    return AspectRatio(
-      aspectRatio: 3 / 4,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 1. Studio Backdrop Layer (Custom Image or Stage Gradient)
-            _buildBackdropLayer(rec),
+    return Builder(
+      builder: (boxContext) {
+        return GestureDetector(
+          onTapUp: (details) {
+            final box = boxContext.findRenderObject() as RenderBox?;
+            if (box != null && box.size.width > 0 && box.size.height > 0) {
+              final local = box.globalToLocal(details.globalPosition);
+              final nx = (local.dx / box.size.width).clamp(0.05, 0.95);
+              final ny = (local.dy / box.size.height).clamp(0.05, 0.95);
+              rec.tapToFocus(nx, ny);
 
-            // 2. Camera Preview Layer with Cutout (Person only) + AI Color/Beauty Filter
-            if (rec.isCameraInitialized && rec.cameraController != null)
-              Center(
-                child: _buildCameraFeedWithCutout(rec),
-              )
-            else
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(color: AppTheme.primary),
-                    const SizedBox(height: 12),
-                    Text(
-                      rec.errorMessage ?? 'Menyiapkan kamera...',
-                      style: const TextStyle(color: Colors.white70, fontSize: 13),
-                    ),
-                  ],
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('🎯 Fokus & Pencahayaan Terkunci pada Objek'),
+                  duration: Duration(milliseconds: 900),
+                  behavior: SnackBarBehavior.floating,
                 ),
-              ),
-
-            // 3. Stage Frame / Vignette Effect
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: rec.isRecording ? Colors.redAccent.withOpacity(0.8) : Colors.white12,
-                  width: rec.isRecording ? 3 : 1,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.5),
-                    Colors.transparent,
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.7),
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-            ),
-
-            // 4. Live Soundwave Visualizer Overlay (Reacting to real-time mic volume)
-            Positioned(
-              bottom: 16,
-              left: 20,
-              right: 20,
-              child: _LiveSoundwaveOverlay(vuLevel: mic.inputLevel),
-            ),
-
-            // 5. Camera Control Actions (Switch Cam, Flash, Filter Tag)
-            Positioned(
-              top: 12,
-              right: 12,
-              child: Column(
+              );
+            }
+          },
+          child: AspectRatio(
+            aspectRatio: 3 / 4,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  if (rec.hasMultipleCameras)
-                    _CircleActionButton(
-                      icon: Icons.flip_camera_ios_rounded,
-                      onTap: rec.switchCamera,
-                      tooltip: 'Ganti Kamera',
+                  // 1. OpenGL ES Composited Native Surface (Person Cutout + Replaced Image/Video + Motion FX + AI Color/Beauty Filter)
+                  if (rec.isCameraInitialized && rec.textureId != null)
+                    Texture(textureId: rec.textureId!)
+                  else
+                    Container(
+                      color: AppTheme.card,
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const CircularProgressIndicator(color: AppTheme.primary),
+                            const SizedBox(height: 12),
+                            Text(
+                              rec.errorMessage ??
+                                  'Menyiapkan kamera & AI Background Remover...',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  const SizedBox(height: 8),
-                  _CircleActionButton(
-                    icon: rec.isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                    color: rec.isFlashOn ? Colors.amber : Colors.white,
-                    onTap: rec.toggleFlash,
-                    tooltip: 'Flash',
+
+                  // 2. Stage Frame / Vignette Effect & Recording Highlight Border
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: rec.isRecording
+                            ? Colors.redAccent.withOpacity(0.85)
+                            : Colors.white12,
+                        width: rec.isRecording ? 3 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withOpacity(0.4),
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.6),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+
+                  // 3. Live Soundwave Visualizer Overlay (Reacting to real-time mic volume)
+                  Positioned(
+                    bottom: 16,
+                    left: 20,
+                    right: 20,
+                    child: _LiveSoundwaveOverlay(vuLevel: mic.inputLevel),
+                  ),
+
+                  // 4. Camera Control Actions (Switch Cam, Flash)
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Column(
+                      children: [
+                        if (rec.hasMultipleCameras)
+                          _CircleActionButton(
+                            icon: Icons.flip_camera_ios_rounded,
+                            onTap: rec.switchCamera,
+                            tooltip: 'Ganti Kamera Depan/Belakang',
+                          ),
+                        const SizedBox(height: 8),
+                        _CircleActionButton(
+                          icon: rec.isFlashOn
+                              ? Icons.flash_on_rounded
+                              : Icons.flash_off_rounded,
+                          color: rec.isFlashOn ? Colors.amber : Colors.white,
+                          onTap: rec.toggleFlash,
+                          tooltip: 'Lampu Flash',
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // 5. Active Filter & Backdrop Badges
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (rec.selectedFilter.type != AiFilterType.none)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: rec.selectedFilter.primaryColor
+                                  .withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(rec.selectedFilter.icon,
+                                    size: 13, color: Colors.black87),
+                                const SizedBox(width: 4),
+                                Text(
+                                  rec.selectedFilter.name,
+                                  style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 6),
+                        if (rec.selectedBackdrop.type != BackdropType.none)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black60,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  rec.selectedBackdrop.isVideo
+                                      ? Icons.videocam_rounded
+                                      : rec.selectedBackdrop.icon,
+                                  size: 13,
+                                  color: rec.selectedBackdrop.isVideo
+                                      ? AppTheme.accent
+                                      : Colors.white70,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  rec.selectedBackdrop.title,
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-
-            // 6. Active Filter & Backdrop Badges
-            Positioned(
-              top: 12,
-              left: 12,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (rec.selectedFilter.type != AiFilterType.none)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: rec.selectedFilter.primaryColor.withOpacity(0.85),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(rec.selectedFilter.icon, size: 13, color: Colors.black87),
-                          const SizedBox(width: 4),
-                          Text(
-                            rec.selectedFilter.name,
-                            style: const TextStyle(
-                              color: Colors.black87,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 6),
-                  if (rec.selectedBackdrop.type != BackdropType.none)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white24),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(rec.selectedBackdrop.icon, size: 13, color: Colors.white70),
-                          const SizedBox(width: 4),
-                          Text(
-                            rec.selectedBackdrop.title,
-                            style: const TextStyle(color: Colors.white, fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCameraFeedWithCutout(RecordProvider rec) {
-    Widget cameraWidget = CameraPreview(rec.cameraController!);
-
-    // Apply AI color / beauty filter if selected
-    if (rec.selectedFilter.colorFilter != null) {
-      cameraWidget = ColorFiltered(
-        colorFilter: rec.selectedFilter.colorFilter!,
-        child: cameraWidget,
-      );
-    }
-
-    // Apply Cutout mode: removes room background so person stands on stage backdrop
-    switch (rec.cutoutMode) {
-      case CutoutMode.none:
-        return Opacity(
-          opacity: rec.backdropOpacity,
-          child: cameraWidget,
+          ),
         );
-
-      case CutoutMode.stageSpotlight:
-        // AI Spotlight Panggung: Menghapus ruangan sekitar, memusatkan sorotan panggung ke orangnya
-        final radius = 0.55 + (rec.cutoutSensitivity * 0.35);
-        return ShaderMask(
-          shaderCallback: (rect) {
-            return RadialGradient(
-              center: Alignment.center,
-              radius: radius,
-              colors: const [
-                Colors.white,
-                Colors.white,
-                Colors.white70,
-                Colors.transparent,
-              ],
-              stops: const [0.0, 0.45, 0.75, 1.0],
-            ).createShader(rect);
-          },
-          blendMode: BlendMode.dstIn,
-          child: cameraWidget,
-        );
-
-      case CutoutMode.greenScreen:
-        // Chroma Key Green Screen: Menghapus background hijau total
-        final gFactor = 2.0 + (rec.cutoutSensitivity * 2.0);
-        return ColorFiltered(
-          colorFilter: ColorFilter.matrix([
-            1.0, 0.0,     0.0, 0.0, 0.0,
-            0.0, 1.0,     0.0, 0.0, 0.0,
-            0.0, 0.0,     1.0, 0.0, 0.0,
-            2.0, -gFactor, 2.0, 1.0, -20.0 * (1.0 - rec.cutoutSensitivity),
-          ]),
-          child: cameraWidget,
-        );
-
-      case CutoutMode.blueScreen:
-        // Chroma Key Blue Screen: Menghapus background biru total
-        final bFactor = 2.0 + (rec.cutoutSensitivity * 2.0);
-        return ColorFiltered(
-          colorFilter: ColorFilter.matrix([
-            1.0, 0.0, 0.0,     0.0, 0.0,
-            0.0, 1.0, 0.0,     0.0, 0.0,
-            0.0, 0.0, 1.0,     0.0, 0.0,
-            2.0, 2.0, -bFactor, 1.0, -20.0 * (1.0 - rec.cutoutSensitivity),
-          ]),
-          child: cameraWidget,
-        );
-    }
-  }
-
-  Widget _buildBackdropLayer(RecordProvider rec) {
-    if (rec.selectedBackdrop.type == BackdropType.customLocal &&
-        rec.selectedBackdrop.localFilePath != null &&
-        File(rec.selectedBackdrop.localFilePath!).existsSync()) {
-      return Image.file(
-        File(rec.selectedBackdrop.localFilePath!),
-        fit: BoxFit.cover,
-      );
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: rec.selectedBackdrop.gradientColors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
+      },
     );
   }
 
@@ -387,7 +338,9 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: rec.isRecording ? Colors.redAccent.withOpacity(0.7) : Colors.white12,
+          color: rec.isRecording
+              ? Colors.redAccent.withOpacity(0.7)
+              : Colors.white12,
           width: rec.isRecording ? 2 : 1,
         ),
         gradient: const RadialGradient(
@@ -398,46 +351,39 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Animated Studio Vinyl / Mic Icon
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppTheme.primary.withOpacity(0.15),
-                  border: Border.all(color: AppTheme.primary.withOpacity(0.5), width: 2),
-                ),
-              ),
-              Icon(
-                Icons.mic_external_on_rounded,
-                size: 44,
-                color: rec.isRecording ? Colors.redAccent : AppTheme.primary,
-              ),
-            ],
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primary.withOpacity(0.15),
+              border: Border.all(color: AppTheme.primary.withOpacity(0.4)),
+            ),
+            child: Icon(
+              Icons.mic_external_on_rounded,
+              size: 48,
+              color: rec.isRecording ? Colors.redAccent : AppTheme.primary,
+            ),
           ),
           const SizedBox(height: 16),
           Text(
-            rec.isRecording ? 'MEREKAM AUDIO KARAOKE' : 'Studio Rekam Audio Lossless',
-            style: TextStyle(
-              color: rec.isRecording ? Colors.redAccent : Colors.white,
+            rec.isRecording
+                ? 'Sedang Merekam Vokal & Musik...'
+                : 'Studio Rekaman Audio Lossless (WAV)',
+            style: const TextStyle(
+              color: Colors.white,
               fontWeight: FontWeight.bold,
               fontSize: 14,
-              letterSpacing: 1.1,
             ),
           ),
           const SizedBox(height: 6),
           Text(
-            'Vokal jernih DSP (Echo, Reverb, EQ) + Musik latar terpadu',
-            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
-          ),
-          const SizedBox(height: 16),
-          // Live Soundwave
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: _LiveSoundwaveOverlay(vuLevel: mic.inputLevel),
+            rec.isRecording
+                ? rec.formattedRecordingTime
+                : 'Menangkap output audio mic realtime + musik karaoke',
+            style: TextStyle(
+              color: rec.isRecording ? Colors.redAccent : Colors.white54,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
@@ -446,57 +392,50 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
 
   Widget _buildRecordControls(BuildContext context, RecordProvider rec) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
         color: AppTheme.card,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white10),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Timer & REC Status
+          // Timer display
           Row(
             children: [
               Container(
-                width: 12,
-                height: 12,
+                width: 10,
+                height: 10,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: rec.isRecording ? Colors.redAccent : Colors.white30,
                 ),
-              ).animate(target: rec.isRecording ? 1 : 0).fade(
-                    duration: 700.ms,
-                    curve: Curves.easeInOut,
-                  ),
+              ),
               const SizedBox(width: 8),
               Text(
-                rec.isRecording ? 'REC ${rec.formattedRecordingTime}' : '00:00',
-                style: TextStyle(
-                  color: rec.isRecording ? Colors.redAccent : Colors.white70,
+                rec.formattedRecordingTime,
+                style: const TextStyle(
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: Colors.white,
+                  fontFamily: 'monospace',
                 ),
               ),
             ],
           ),
 
-          // Central Big Record Button
+          // Central Record Button
           GestureDetector(
             onTap: () async {
               if (rec.isRecording) {
                 final path = await rec.stopRecording();
-                if (context.mounted && path != null) {
+                if (path != null && context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Tersimpan: ${path.split('/').last}'),
-                      backgroundColor: AppTheme.success,
-                      action: SnackBarAction(
-                        label: 'Buka',
-                        textColor: Colors.white,
-                        onPressed: () => _showRecordingsLibrary(context, rec),
-                      ),
+                      content: Text('✅ Rekaman disimpan: ${path.split("/").last}'),
+                      backgroundColor: Colors.green[700],
+                      behavior: SnackBarBehavior.floating,
                     ),
                   );
                 }
@@ -520,7 +459,9 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                 ],
               ),
               child: Icon(
-                rec.isRecording ? Icons.stop_rounded : Icons.fiber_manual_record_rounded,
+                rec.isRecording
+                    ? Icons.stop_rounded
+                    : Icons.fiber_manual_record_rounded,
                 color: Colors.white,
                 size: rec.isRecording ? 32 : 36,
               ),
@@ -567,10 +508,12 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
           return GestureDetector(
             onTap: () => rec.setCutoutMode(opt.mode),
             child: Container(
-              width: 125,
+              width: 140,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected ? AppTheme.accent.withOpacity(0.2) : AppTheme.card,
+                color: isSelected
+                    ? AppTheme.accent.withOpacity(0.2)
+                    : AppTheme.card,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isSelected ? AppTheme.accent : Colors.white10,
@@ -593,7 +536,8 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.white70,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
                       fontSize: 11,
                     ),
                   ),
@@ -607,9 +551,9 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
   }
 
   Widget _buildCutoutSensitivitySlider(RecordProvider rec) {
-    String label = 'Sensitivitas AI Cutout:';
-    if (rec.cutoutMode == CutoutMode.stageSpotlight) {
-      label = 'Radius Sorotan Orang:';
+    String label = 'Sensitivitas Deteksi AI:';
+    if (rec.cutoutMode == CutoutMode.aiBlurBackground) {
+      label = 'Tingkat Blur Latar Bokeh:';
     } else if (rec.cutoutMode == CutoutMode.greenScreen) {
       label = 'Sensitivitas Layar Hijau:';
     } else if (rec.cutoutMode == CutoutMode.blueScreen) {
@@ -644,15 +588,21 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
               ),
               Text(
                 '${(rec.cutoutSensitivity * 100).toInt()}%',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
               ),
             ],
           ),
           Padding(
             padding: const EdgeInsets.only(left: 26, bottom: 4),
             child: Text(
-              CutoutOption.options.firstWhere((o) => o.mode == rec.cutoutMode).description,
-              style: TextStyle(fontSize: 10.5, color: Colors.white.withOpacity(0.55)),
+              CutoutOption.options
+                  .firstWhere((o) => o.mode == rec.cutoutMode)
+                  .description,
+              style: TextStyle(
+                  fontSize: 10.5, color: Colors.white.withOpacity(0.55)),
             ),
           ),
         ],
@@ -674,10 +624,12 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
           return GestureDetector(
             onTap: () => rec.setFilter(filter),
             child: Container(
-              width: 100,
+              width: 105,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected ? filter.primaryColor.withOpacity(0.2) : AppTheme.card,
+                color: isSelected
+                    ? filter.primaryColor.withOpacity(0.2)
+                    : AppTheme.card,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isSelected ? filter.primaryColor : Colors.white10,
@@ -696,7 +648,8 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: isSelected ? Colors.white : Colors.white70,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
                       fontSize: 11,
                     ),
                   ),
@@ -711,36 +664,42 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
 
   Widget _buildBackdropsList(RecordProvider rec) {
     return SizedBox(
-      height: 72,
+      height: 76,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          // Pick Custom from Local Storage
+          // 1. Pick Custom Photo from Gallery
           GestureDetector(
-            onTap: rec.pickCustomBackdrop,
+            onTap: rec.pickCustomBackdropImage,
             child: Container(
               width: 115,
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
-                color: rec.selectedBackdrop.type == BackdropType.customLocal
+                color: rec.selectedBackdrop.type == BackdropType.customLocal &&
+                        !rec.selectedBackdrop.isVideo
                     ? AppTheme.accent.withOpacity(0.25)
                     : AppTheme.card,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: rec.selectedBackdrop.type == BackdropType.customLocal
+                  color: rec.selectedBackdrop.type == BackdropType.customLocal &&
+                          !rec.selectedBackdrop.isVideo
                       ? AppTheme.accent
                       : Colors.white24,
-                  width: rec.selectedBackdrop.type == BackdropType.customLocal ? 2 : 1,
+                  width: rec.selectedBackdrop.type == BackdropType.customLocal &&
+                          !rec.selectedBackdrop.isVideo
+                      ? 2
+                      : 1,
                 ),
               ),
               child: const Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.add_photo_alternate_rounded, color: AppTheme.accent, size: 22),
+                  Icon(Icons.add_photo_alternate_rounded,
+                      color: AppTheme.accent, size: 22),
                   SizedBox(height: 4),
                   Text(
-                    '+ Pilih dari Galeri',
+                    '+ Foto Galeri',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -754,17 +713,64 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
             ),
           ),
 
-          // Preset Backdrops
+          // 2. Pick Custom Video from Gallery
+          GestureDetector(
+            onTap: rec.pickCustomBackdropVideo,
+            child: Container(
+              width: 115,
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: rec.selectedBackdrop.type == BackdropType.customLocal &&
+                        rec.selectedBackdrop.isVideo
+                    ? AppTheme.primary.withOpacity(0.25)
+                    : AppTheme.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: rec.selectedBackdrop.type == BackdropType.customLocal &&
+                          rec.selectedBackdrop.isVideo
+                      ? AppTheme.primary
+                      : Colors.white24,
+                  width: rec.selectedBackdrop.type == BackdropType.customLocal &&
+                          rec.selectedBackdrop.isVideo
+                      ? 2
+                      : 1,
+                ),
+              ),
+              child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.video_collection_rounded,
+                      color: AppTheme.primary, size: 22),
+                  SizedBox(height: 4),
+                  Text(
+                    '+ Video Galeri',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // 3. Preset Backdrops
           ...StudioBackdrop.presets.map((b) {
             final isSelected = rec.selectedBackdrop.type == b.type;
             return GestureDetector(
               onTap: () => rec.setBackdrop(b),
               child: Container(
-                width: 105,
+                width: 110,
                 margin: const EdgeInsets.only(right: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? AppTheme.primary.withOpacity(0.25) : AppTheme.card,
+                  color: isSelected
+                      ? AppTheme.primary.withOpacity(0.25)
+                      : AppTheme.card,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: isSelected ? AppTheme.primary : Colors.white10,
@@ -783,7 +789,8 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: isSelected ? Colors.white : Colors.white70,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
                         fontSize: 11,
                       ),
                     ),
@@ -797,40 +804,8 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
     );
   }
 
-  Widget _buildBackdropOpacitySlider(RecordProvider rec) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.opacity_rounded, size: 18, color: Colors.white70),
-          const SizedBox(width: 8),
-          const Text(
-            'Transparansi Kamera:',
-            style: TextStyle(fontSize: 12, color: Colors.white70),
-          ),
-          Expanded(
-            child: Slider(
-              value: rec.backdropOpacity,
-              min: 0.2,
-              max: 1.0,
-              activeColor: AppTheme.primary,
-              onChanged: rec.setBackdropOpacity,
-            ),
-          ),
-          Text(
-            '${(rec.backdropOpacity * 100).toInt()}%',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader({required String title, required String subtitle}) {
+  Widget _buildSectionHeader(
+      {required String title, required String subtitle}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -898,7 +873,8 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                           ),
                           Text(
                             '${recordProv.savedRecordings.length} File',
-                            style: const TextStyle(fontSize: 12, color: Colors.white54),
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.white54),
                           ),
                         ],
                       ),
@@ -909,13 +885,15 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                                 child: Text(
                                   'Belum ada rekaman tersimpan.\nMulai rekam video atau audio sekarang!',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.white38, fontSize: 13),
+                                  style: TextStyle(
+                                      color: Colors.white38, fontSize: 13),
                                 ),
                               )
                             : ListView.separated(
                                 controller: scrollController,
                                 itemCount: recordProv.savedRecordings.length,
-                                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 8),
                                 itemBuilder: (context, i) {
                                   final item = recordProv.savedRecordings[i];
                                   final isPlaying =
@@ -923,14 +901,17 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                                           recordProv.isPlayingPlayback;
 
                                   return Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
                                     decoration: BoxDecoration(
                                       color: isPlaying
                                           ? AppTheme.primary.withOpacity(0.15)
                                           : AppTheme.card,
                                       borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
-                                        color: isPlaying ? AppTheme.primary : Colors.white10,
+                                        color: isPlaying
+                                            ? AppTheme.primary
+                                            : Colors.white10,
                                       ),
                                     ),
                                     child: Row(
@@ -939,13 +920,16 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                                           item.isVideo
                                               ? Icons.videocam_rounded
                                               : Icons.audiotrack_rounded,
-                                          color: item.isVideo ? AppTheme.accent : AppTheme.primary,
+                                          color: item.isVideo
+                                              ? AppTheme.accent
+                                              : AppTheme.primary,
                                           size: 28,
                                         ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text(
                                                 item.name,
@@ -962,29 +946,51 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                                                 '${item.formattedDate} • ${item.formattedSize}',
                                                 style: TextStyle(
                                                   fontSize: 11,
-                                                  color: Colors.white.withOpacity(0.5),
+                                                  color: Colors.white
+                                                      .withOpacity(0.5),
                                                 ),
                                               ),
                                             ],
                                           ),
                                         ),
-                                        // Play / Pause Button for audio
+                                        // Play / View Button for Video
+                                        if (item.isVideo)
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.play_circle_fill_rounded,
+                                              color: AppTheme.accent,
+                                              size: 30,
+                                            ),
+                                            tooltip: 'Tonton Video',
+                                            onPressed: () {
+                                              _showVideoPlayerDialog(
+                                                  context, recordProv, item);
+                                            },
+                                          ),
+                                        // Play / Pause Button for Audio
                                         if (!item.isVideo)
                                           IconButton(
                                             icon: Icon(
                                               isPlaying
-                                                  ? Icons.pause_circle_filled_rounded
-                                                  : Icons.play_circle_fill_rounded,
+                                                  ? Icons
+                                                      .pause_circle_filled_rounded
+                                                  : Icons
+                                                      .play_circle_fill_rounded,
                                               color: AppTheme.primary,
                                               size: 30,
                                             ),
-                                            onPressed: () => recordProv.playRecording(item),
+                                            tooltip: 'Putar Audio',
+                                            onPressed: () =>
+                                                recordProv.playAudioRecording(item),
                                           ),
                                         // Delete Button
                                         IconButton(
-                                          icon: const Icon(Icons.delete_outline_rounded,
-                                              color: Colors.redAccent, size: 20),
-                                          onPressed: () => recordProv.deleteRecording(item),
+                                          icon: const Icon(
+                                              Icons.delete_outline_rounded,
+                                              color: Colors.redAccent,
+                                              size: 20),
+                                          onPressed: () =>
+                                              recordProv.deleteRecording(item),
                                         ),
                                       ],
                                     ),
@@ -1001,6 +1007,110 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
         );
       },
     );
+  }
+
+  void _showVideoPlayerDialog(
+      BuildContext context, RecordProvider rec, RecordingItem item) {
+    rec.startRecordedVideoPlayback(item.path);
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: const Color(0xFF141421),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Consumer<RecordProvider>(
+            builder: (_, prov, __) {
+              final dur = prov.videoDurationMs;
+              final pos = prov.videoPositionMs;
+
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            item.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded,
+                              color: Colors.white70),
+                          onPressed: () {
+                            prov.stopRecordedVideoPlayback();
+                            Navigator.of(ctx).pop();
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Video Texture Container
+                    AspectRatio(
+                      aspectRatio: 3 / 4,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: prov.playbackVideoTextureId != null
+                            ? Texture(textureId: prov.playbackVideoTextureId!)
+                            : Container(
+                                color: Colors.black,
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                      color: AppTheme.accent),
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Progress Slider
+                    if (dur > 0)
+                      Slider(
+                        value: pos.clamp(0, dur).toDouble(),
+                        min: 0.0,
+                        max: dur.toDouble(),
+                        activeColor: AppTheme.accent,
+                        onChanged: (val) {
+                          prov.seekRecordedVideo(val.toInt());
+                        },
+                      ),
+                    // Playback Controls
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            prov.isPlayingVideo
+                                ? Icons.pause_circle_filled_rounded
+                                : Icons.play_circle_fill_rounded,
+                            size: 44,
+                            color: AppTheme.accent,
+                          ),
+                          onPressed: prov.toggleRecordedVideoPause,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    ).then((_) {
+      rec.stopRecordedVideoPlayback();
+    });
   }
 }
 
@@ -1084,8 +1194,11 @@ class _LiveSoundwaveOverlay extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: List.generate(18, (i) {
           final barScale = ((i - 9).abs() / 9.0);
-          final barHeight = (8 + (vuLevel * 28 * (1.0 - barScale * 0.5))).clamp(4.0, 36.0);
-          final color = Color.lerp(AppTheme.primary, AppTheme.accent, i / 18.0) ?? AppTheme.primary;
+          final barHeight =
+              (8 + (vuLevel * 28 * (1.0 - barScale * 0.5))).clamp(4.0, 36.0);
+          final color =
+              Color.lerp(AppTheme.primary, AppTheme.accent, i / 18.0) ??
+                  AppTheme.primary;
 
           return Container(
             margin: const EdgeInsets.symmetric(horizontal: 2),

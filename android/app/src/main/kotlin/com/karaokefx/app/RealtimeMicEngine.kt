@@ -115,6 +115,10 @@ class RealtimeMicEngine private constructor() {
     // AudioManager reference — injected by MainActivity
     var audioManager: AudioManager? = null
 
+    // Non-blocking callback for sharing live processed DSP audio with video recorder
+    @Volatile
+    var audioFrameConsumer: ((ShortArray, Int) -> Unit)? = null
+
     // ─── Native WAV Audio Recording State ─────────────────────────────────
     @Volatile private var isRecordingAudio = false
     private var recordOutputFile: java.io.File? = null
@@ -412,6 +416,7 @@ class RealtimeMicEngine private constructor() {
         val pcmIn = ShortArray(CHUNK_SIZE)
         val pcmOut = ShortArray(CHUNK_SIZE)
         val floatBuf = FloatArray(CHUNK_SIZE)
+        val silentBuf = ShortArray(CHUNK_SIZE)
 
         while (isRunning) {
             val record = audioRecord ?: break
@@ -434,9 +439,10 @@ class RealtimeMicEngine private constructor() {
             val rawVu = ((instantDb + 55f) / 55f).coerceIn(0f, 1f)
             liveVuLevel = liveVuLevel * 0.6f + rawVu * 0.4f
 
-            // If mic output is disabled, silence output
+            // If mic output monitoring is disabled, silence speaker output but still deliver raw capture to video recorder if recording
             if (!isEnabled) {
-                track.write(ShortArray(readCount), 0, readCount)
+                audioFrameConsumer?.invoke(pcmIn, readCount)
+                track.write(silentBuf, 0, readCount)
                 continue
             }
 
@@ -570,7 +576,10 @@ class RealtimeMicEngine private constructor() {
                 pcmOut[i] = (limited.coerceIn(-1.0f, 1.0f) * 32767.0f).toInt().toShort()
             }
 
-            // 4. If recording audio is active, write PCM bytes to WAV stream
+            // 4. Share processed DSP PCM with video recorder if active (non-blocking)
+            audioFrameConsumer?.invoke(pcmOut, readCount)
+
+            // 5. If recording audio WAV is active, write PCM bytes to WAV stream
             if (isRecordingAudio) {
                 try {
                     val stream = recordOutputStream
@@ -589,7 +598,7 @@ class RealtimeMicEngine private constructor() {
                 }
             }
 
-            // 5. Output directly to AudioTrack with low latency
+            // 6. Output directly to AudioTrack with low latency
             track.write(pcmOut, 0, readCount)
         }
     }

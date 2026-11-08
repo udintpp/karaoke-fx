@@ -45,6 +45,10 @@ class MainActivity : FlutterActivity() {
     private var isBtReceiverStreaming: Boolean = false
     private var bluetoothReceiver: BroadcastReceiver? = null
 
+    // Native Camera Background Remover and Video Player
+    private var cameraBgEngine: CameraBgRemoverEngine? = null
+    private var recordedVideoPlayer: RecordedVideoPlayer? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -485,6 +489,111 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // ─── Camera Background Remover & Composited MP4 Video Channel ─────────
+        val cameraChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.karaokefx.app/camera_bg_remover")
+        cameraChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "initCamera" -> {
+                    val preferFront = call.argument<Boolean>("preferFront") ?: true
+                    if (cameraBgEngine == null) {
+                        cameraBgEngine = CameraBgRemoverEngine(this, flutterEngine.renderer)
+                    }
+                    cameraBgEngine?.initialize(
+                        preferFront = preferFront,
+                        onSuccess = { info -> result.success(info) },
+                        onError = { err -> result.error("CAMERA_INIT_FAILED", err, null) }
+                    )
+                }
+                "switchCamera" -> {
+                    cameraBgEngine?.switchCamera(
+                        onDone = { isFront -> result.success(isFront) },
+                        onError = { err -> result.error("SWITCH_CAMERA_FAILED", err, null) }
+                    ) ?: result.error("ENGINE_NULL", "Camera engine not initialized", null)
+                }
+                "setFlash" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    val success = cameraBgEngine?.setFlash(enabled) ?: false
+                    result.success(success)
+                }
+                "tapToFocus" -> {
+                    val x = (call.argument<Double>("x") ?: 0.5).toFloat()
+                    val y = (call.argument<Double>("y") ?: 0.5).toFloat()
+                    cameraBgEngine?.tapToFocus(x, y)
+                    result.success(true)
+                }
+                "setCutoutMode" -> {
+                    val mode = call.argument<String>("mode") ?: "aiCutout"
+                    val sensitivity = (call.argument<Double>("sensitivity") ?: 0.65).toFloat()
+                    cameraBgEngine?.setCutoutMode(mode, sensitivity)
+                    result.success(true)
+                }
+                "setColorFilter" -> {
+                    val matrix = call.argument<List<Double>>("matrix")
+                    val isBeauty = call.argument<Boolean>("isBeauty") ?: false
+                    cameraBgEngine?.setColorFilter(matrix, isBeauty)
+                    result.success(true)
+                }
+                "setBackdropMedia" -> {
+                    val mediaType = call.argument<String>("mediaType") ?: "image"
+                    val sourceKind = call.argument<String>("sourceKind") ?: "asset"
+                    val pathOrKey = call.argument<String>("pathOrKey") ?: ""
+                    val motionType = call.argument<String>("motionType") ?: "none"
+                    val gradCols = call.argument<List<Int>>("gradientColors") ?: emptyList()
+                    cameraBgEngine?.setBackdropMedia(mediaType, sourceKind, pathOrKey, motionType, gradCols)
+                    result.success(true)
+                }
+                "startVideoRecording" -> {
+                    val path = call.argument<String>("outputPath") ?: ""
+                    if (path.isEmpty()) {
+                        result.error("INVALID_PATH", "Output path cannot be empty", null)
+                    } else {
+                        val ok = cameraBgEngine?.startVideoRecording(path) ?: false
+                        result.success(ok)
+                    }
+                }
+                "stopVideoRecording" -> {
+                    val path = cameraBgEngine?.stopVideoRecording()
+                    result.success(path)
+                }
+                "disposeCamera" -> {
+                    cameraBgEngine?.release()
+                    cameraBgEngine = null
+                    result.success(true)
+                }
+                "playRecordedVideo" -> {
+                    val path = call.argument<String>("filePath") ?: ""
+                    if (recordedVideoPlayer == null) {
+                        recordedVideoPlayer = RecordedVideoPlayer(flutterEngine.renderer)
+                    }
+                    recordedVideoPlayer?.play(
+                        filePath = path,
+                        onPrepared = { info -> result.success(info) },
+                        onError = { err -> result.error("PLAY_ERROR", err, null) },
+                        onCompleted = {
+                            cameraChannel.invokeMethod("onVideoPlaybackCompleted", null)
+                        }
+                    )
+                }
+                "toggleRecordedVideoPause" -> {
+                    val playing = recordedVideoPlayer?.togglePause() ?: false
+                    result.success(playing)
+                }
+                "seekRecordedVideo" -> {
+                    val pos = call.argument<Int>("positionMs") ?: 0
+                    recordedVideoPlayer?.seekTo(pos)
+                    result.success(true)
+                }
+                "getRecordedVideoPosition" -> {
+                    result.success(recordedVideoPlayer?.getPositionInfo() ?: emptyMap<String, Any>())
+                }
+                "stopRecordedVideo" -> {
+                    recordedVideoPlayer?.stop()
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun initSystemAudioFx() {
@@ -689,6 +798,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            cameraBgEngine?.release()
+            cameraBgEngine = null
+        } catch (_: Exception) {}
+        try {
+            recordedVideoPlayer?.stop()
+            recordedVideoPlayer = null
+        } catch (_: Exception) {}
         try {
             RealtimeMicEngine.getInstance().stop()
         } catch (_: Exception) {}
