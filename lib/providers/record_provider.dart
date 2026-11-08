@@ -32,10 +32,12 @@ class RecordProvider extends ChangeNotifier {
   Timer? _timer;
   String? _errorMessage;
 
-  // AI Filters & Backdrops
+  // AI Filters, Backdrops, and Background Cutout
   CameraAiFilter _selectedFilter = CameraAiFilter.allFilters.first;
   StudioBackdrop _selectedBackdrop = StudioBackdrop.presets[1]; // Default: Panggung Konser
-  double _backdropOpacity = 0.85;
+  double _backdropOpacity = 1.0;
+  CutoutMode _cutoutMode = CutoutMode.stageSpotlight; // Default: AI Spotlight Cutout (Hapus ruangan sekitar orang)
+  double _cutoutSensitivity = 0.65;
 
   // Saved Recordings
   List<RecordingItem> _savedRecordings = [];
@@ -57,6 +59,8 @@ class RecordProvider extends ChangeNotifier {
   CameraAiFilter get selectedFilter => _selectedFilter;
   StudioBackdrop get selectedBackdrop => _selectedBackdrop;
   double get backdropOpacity => _backdropOpacity;
+  CutoutMode get cutoutMode => _cutoutMode;
+  double get cutoutSensitivity => _cutoutSensitivity;
 
   List<RecordingItem> get savedRecordings => _savedRecordings;
   String? get currentlyPlayingId => _currentlyPlayingId;
@@ -176,6 +180,16 @@ class RecordProvider extends ChangeNotifier {
 
   void setBackdropOpacity(double opacity) {
     _backdropOpacity = opacity.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+
+  void setCutoutMode(CutoutMode mode) {
+    _cutoutMode = mode;
+    notifyListeners();
+  }
+
+  void setCutoutSensitivity(double sensitivity) {
+    _cutoutSensitivity = sensitivity.clamp(0.1, 1.0);
     notifyListeners();
   }
 

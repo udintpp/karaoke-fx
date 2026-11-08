@@ -52,8 +52,20 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
               _buildRecordControls(context, rec),
               const SizedBox(height: 20),
 
-              // AI Video Filters Section
+              // AI Video Filters & Background Cutout Sections
               if (rec.mode == RecordingMode.video) ...[
+                // Background Cutout Section (Person Only)
+                _buildSectionHeader(
+                  title: '🎭 Hapus Background (Hanya Orangnya Saja)',
+                  subtitle: 'Hilangkan latar ruangan asli & ganti dengan panggung konser atau galeri',
+                ),
+                const SizedBox(height: 8),
+                _buildCutoutModesList(rec),
+                const SizedBox(height: 10),
+                if (rec.cutoutMode != CutoutMode.none)
+                  _buildCutoutSensitivitySlider(rec),
+                const SizedBox(height: 20),
+
                 _buildSectionHeader(
                   title: '✨ Efek Kamera AI & Stage Lighting',
                   subtitle: 'Filter kecantikan & pencahayaan panggung real-time',
@@ -145,17 +157,10 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
             // 1. Studio Backdrop Layer (Custom Image or Stage Gradient)
             _buildBackdropLayer(rec),
 
-            // 2. Camera Preview Layer with AI Color/Beauty Filter
+            // 2. Camera Preview Layer with Cutout (Person only) + AI Color/Beauty Filter
             if (rec.isCameraInitialized && rec.cameraController != null)
               Center(
-                child: Opacity(
-                  opacity: rec.backdropOpacity,
-                  child: ColorFiltered(
-                    colorFilter: rec.selectedFilter.colorFilter ??
-                        const ColorFilter.mode(Colors.transparent, BlendMode.dst),
-                    child: CameraPreview(rec.cameraController!),
-                  ),
-                ),
+                child: _buildCameraFeedWithCutout(rec),
               )
             else
               Center(
@@ -282,6 +287,74 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildCameraFeedWithCutout(RecordProvider rec) {
+    Widget cameraWidget = CameraPreview(rec.cameraController!);
+
+    // Apply AI color / beauty filter if selected
+    if (rec.selectedFilter.colorFilter != null) {
+      cameraWidget = ColorFiltered(
+        colorFilter: rec.selectedFilter.colorFilter!,
+        child: cameraWidget,
+      );
+    }
+
+    // Apply Cutout mode: removes room background so person stands on stage backdrop
+    switch (rec.cutoutMode) {
+      case CutoutMode.none:
+        return Opacity(
+          opacity: rec.backdropOpacity,
+          child: cameraWidget,
+        );
+
+      case CutoutMode.stageSpotlight:
+        // AI Spotlight Panggung: Menghapus ruangan sekitar, memusatkan sorotan panggung ke orangnya
+        final radius = 0.55 + (rec.cutoutSensitivity * 0.35);
+        return ShaderMask(
+          shaderCallback: (rect) {
+            return RadialGradient(
+              center: Alignment.center,
+              radius: radius,
+              colors: const [
+                Colors.white,
+                Colors.white,
+                Colors.white70,
+                Colors.transparent,
+              ],
+              stops: const [0.0, 0.45, 0.75, 1.0],
+            ).createShader(rect);
+          },
+          blendMode: BlendMode.dstIn,
+          child: cameraWidget,
+        );
+
+      case CutoutMode.greenScreen:
+        // Chroma Key Green Screen: Menghapus background hijau total
+        final gFactor = 2.0 + (rec.cutoutSensitivity * 2.0);
+        return ColorFiltered(
+          colorFilter: ColorFilter.matrix([
+            1.0, 0.0,     0.0, 0.0, 0.0,
+            0.0, 1.0,     0.0, 0.0, 0.0,
+            0.0, 0.0,     1.0, 0.0, 0.0,
+            2.0, -gFactor, 2.0, 1.0, -20.0 * (1.0 - rec.cutoutSensitivity),
+          ]),
+          child: cameraWidget,
+        );
+
+      case CutoutMode.blueScreen:
+        // Chroma Key Blue Screen: Menghapus background biru total
+        final bFactor = 2.0 + (rec.cutoutSensitivity * 2.0);
+        return ColorFiltered(
+          colorFilter: ColorFilter.matrix([
+            1.0, 0.0, 0.0,     0.0, 0.0,
+            0.0, 1.0, 0.0,     0.0, 0.0,
+            0.0, 0.0, 1.0,     0.0, 0.0,
+            2.0, 2.0, -bFactor, 1.0, -20.0 * (1.0 - rec.cutoutSensitivity),
+          ]),
+          child: cameraWidget,
+        );
+    }
   }
 
   Widget _buildBackdropLayer(RecordProvider rec) {
@@ -473,6 +546,113 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCutoutModesList(RecordProvider rec) {
+    return SizedBox(
+      height: 78,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: CutoutOption.options.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final opt = CutoutOption.options[index];
+          final isSelected = rec.cutoutMode == opt.mode;
+
+          return GestureDetector(
+            onTap: () => rec.setCutoutMode(opt.mode),
+            child: Container(
+              width: 125,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? AppTheme.accent.withOpacity(0.2) : AppTheme.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? AppTheme.accent : Colors.white10,
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    opt.icon,
+                    color: isSelected ? AppTheme.accent : Colors.white70,
+                    size: 22,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    opt.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white70,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCutoutSensitivitySlider(RecordProvider rec) {
+    String label = 'Sensitivitas AI Cutout:';
+    if (rec.cutoutMode == CutoutMode.stageSpotlight) {
+      label = 'Radius Sorotan Orang:';
+    } else if (rec.cutoutMode == CutoutMode.greenScreen) {
+      label = 'Sensitivitas Layar Hijau:';
+    } else if (rec.cutoutMode == CutoutMode.blueScreen) {
+      label = 'Sensitivitas Layar Biru:';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.tune_rounded, size: 18, color: AppTheme.accent),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+              Expanded(
+                child: Slider(
+                  value: rec.cutoutSensitivity,
+                  min: 0.1,
+                  max: 1.0,
+                  activeColor: AppTheme.accent,
+                  onChanged: rec.setCutoutSensitivity,
+                ),
+              ),
+              Text(
+                '${(rec.cutoutSensitivity * 100).toInt()}%',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 26, bottom: 4),
+            child: Text(
+              CutoutOption.options.firstWhere((o) => o.mode == rec.cutoutMode).description,
+              style: TextStyle(fontSize: 10.5, color: Colors.white.withOpacity(0.55)),
             ),
           ),
         ],

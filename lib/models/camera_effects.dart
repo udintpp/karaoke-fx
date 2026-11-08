@@ -180,3 +180,51 @@ class StudioBackdrop {
     ),
   ];
 }
+
+enum CutoutMode {
+  none,
+  stageSpotlight,
+  greenScreen,
+  blueScreen,
+}
+
+class CutoutOption {
+  final CutoutMode mode;
+  final String title;
+  final IconData icon;
+  final String description;
+
+  const CutoutOption({
+    required this.mode,
+    required this.title,
+    required this.icon,
+    required this.description,
+  });
+
+  static const List<CutoutOption> options = [
+    CutoutOption(
+      mode: CutoutMode.none,
+      title: 'Kamera Penuh',
+      icon: Icons.crop_free_rounded,
+      description: 'Tampilkan seluruh ruangan tanpa pemotongan background',
+    ),
+    CutoutOption(
+      mode: CutoutMode.stageSpotlight,
+      title: 'AI Panggung Sorot',
+      icon: Icons.highlight_rounded,
+      description: 'Hapus ruangan asli, fokuskan lampu konser ke tubuh & wajah Anda',
+    ),
+    CutoutOption(
+      mode: CutoutMode.greenScreen,
+      title: 'Layar Hijau',
+      icon: Icons.auto_fix_high_rounded,
+      description: 'Hapus warna hijau di belakang Anda 100% transparan',
+    ),
+    CutoutOption(
+      mode: CutoutMode.blueScreen,
+      title: 'Layar Biru',
+      icon: Icons.auto_fix_normal_rounded,
+      description: 'Hapus warna biru di belakang Anda 100% transparan',
+    ),
+  ];
+}
