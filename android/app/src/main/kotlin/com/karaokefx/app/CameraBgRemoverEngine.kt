@@ -8,12 +8,14 @@ import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Shader
+import android.hardware.SensorManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.Size
+import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.camera.core.Camera
@@ -107,6 +109,12 @@ class CameraBgRemoverEngine(
 
     // Composited MP4 recorder
     private var mp4Recorder: CompositedMp4Recorder? = null
+
+    // Auto-rotation tracking via hardware orientation sensor
+    private var previewUseCase: Preview? = null
+    private var imageAnalysisUseCase: ImageAnalysis? = null
+    private var orientationEventListener: OrientationEventListener? = null
+    private var currentDeviceRotation = Surface.ROTATION_0
 
     var useFrontCamera: Boolean = true
         private set
@@ -229,7 +237,9 @@ class CameraBgRemoverEngine(
 
                 val preview = Preview.Builder()
                     .setResolutionSelector(resolutionSelector)
+                    .setTargetRotation(currentDeviceRotation)
                     .build()
+                previewUseCase = preview
 
                 preview.setSurfaceProvider(ContextCompat.getMainExecutor(context)) { surfaceRequest ->
                     val res = surfaceRequest.resolution
@@ -254,8 +264,10 @@ class CameraBgRemoverEngine(
 
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setResolutionSelector(resolutionSelector)
+                    .setTargetRotation(currentDeviceRotation)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
+                imageAnalysisUseCase = imageAnalysis
 
                 imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
                     val currentCutout = renderer?.cutoutMode ?: 1
@@ -357,12 +369,51 @@ class CameraBgRemoverEngine(
                 // Lock continuous focus & exposure toward upper-center where person/face is framed
                 tapToFocus(0.5f, 0.42f)
 
+                setupOrientationEventListener()
+
                 onBound()
             } catch (e: Exception) {
                 Log.e(TAG, "CameraX bind failed: ${e.message}", e)
                 onFail(e.message ?: "Gagal membuka kamera")
             }
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    private fun setupOrientationEventListener() {
+        if (orientationEventListener != null) return
+        try {
+            orientationEventListener = object : OrientationEventListener(context, SensorManager.SENSOR_DELAY_UI) {
+                override fun onOrientationChanged(orientation: Int) {
+                    if (orientation == ORIENTATION_UNKNOWN) return
+
+                    // Map accelerometer degrees (0..359) to Surface.ROTATION constants
+                    val newRotation = when (orientation) {
+                        in 45 until 135 -> Surface.ROTATION_270
+                        in 135 until 225 -> Surface.ROTATION_180
+                        in 225 until 315 -> Surface.ROTATION_90
+                        else -> Surface.ROTATION_0
+                    }
+
+                    if (newRotation != currentDeviceRotation) {
+                        currentDeviceRotation = newRotation
+                        mainHandler.post {
+                            try {
+                                previewUseCase?.targetRotation = newRotation
+                                imageAnalysisUseCase?.targetRotation = newRotation
+                            } catch (e: Exception) {
+                                Log.d(TAG, "Update targetRotation error: ${e.message}")
+                            }
+                        }
+                    }
+                }
+            }.apply {
+                if (canDetectOrientation()) {
+                    enable()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to initialize OrientationEventListener: ${e.message}")
+        }
     }
 
     fun switchCamera(onDone: (Boolean) -> Unit, onError: (String) -> Unit) {
@@ -653,6 +704,13 @@ class CameraBgRemoverEngine(
             stopVideoRecording()
         }
         stopBgVideoPlayback()
+
+        try {
+            orientationEventListener?.disable()
+            orientationEventListener = null
+        } catch (_: Exception) {}
+        previewUseCase = null
+        imageAnalysisUseCase = null
 
         mainHandler.post {
             try {

@@ -143,10 +143,17 @@ class CameraGlRenderer(
             varying vec2 vUprightUv;
 
             vec2 uprightToCameraOes(vec2 uprightMirroredUv) {
-                vec2 rawUv = clamp(uprightMirroredUv, 0.002, 0.998);
+                vec2 c = clamp(uprightMirroredUv, 0.002, 0.998);
+                vec2 rawUv = c;
+                if (uRotationDegrees == 90) {
+                    rawUv = vec2(1.0 - c.y, c.x);
+                } else if (uRotationDegrees == 180) {
+                    rawUv = vec2(1.0 - c.x, 1.0 - c.y);
+                } else if (uRotationDegrees == 270) {
+                    rawUv = vec2(c.y, 1.0 - c.x);
+                }
                 // Convert Top-Left (0,0) -> Bottom-Left GL (0,0) for SurfaceTexture matrix
                 vec4 glUv = vec4(rawUv.x, 1.0 - rawUv.y, 0.0, 1.0);
-                // uStMatrix from SurfaceTexture.getTransformMatrix automatically handles camera orientation!
                 return clamp((uStMatrix * glUv).xy, 0.001, 0.999);
             }
 
@@ -796,8 +803,11 @@ class CameraGlRenderer(
         val (maskSx, maskSy) = computeAspectFillScale(analysisPortraitW, analysisPortraitH, outputWidth, outputHeight)
         val (bgSx, bgSy) = computeAspectFillScale(bgImageW, bgImageH, outputWidth, outputHeight)
 
+        val matrixHasRot = kotlin.math.abs(stMatrix[1]) > 0.3f || kotlin.math.abs(stMatrix[4]) > 0.3f
+        val effectiveCamRot = if (matrixHasRot) 0 else rotationDegrees
+
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(mainProgram, "uStMatrix"), 1, false, stMatrix, 0)
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uRotationDegrees"), rotationDegrees)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uRotationDegrees"), effectiveCamRot)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(mainProgram, "uIsFrontCamera"), if (isFrontCamera) 1.0f else 0.0f)
 
         GLES20.glUniform2f(GLES20.glGetUniformLocation(mainProgram, "uCamCropScale"), camSx, camSy)
