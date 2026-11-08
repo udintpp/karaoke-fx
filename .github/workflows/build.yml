@@ -5,7 +5,7 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   build-apk:
@@ -36,16 +36,6 @@ jobs:
         run: flutter analyze --no-fatal-infos
         continue-on-error: true
 
-      - name: 🏗️ Build Debug APK
-        run: flutter build apk --debug --no-tree-shake-icons
-
-      - name: 📤 Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: karaoke-fx-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          retention-days: 30
-
       - name: 🏗️ Build Release APK
         run: flutter build apk --release --no-tree-shake-icons
 
@@ -58,6 +48,5 @@ jobs:
 
       - name: ✅ Build Info
         run: |
-          echo "✅ Build completed!"
-          echo "📁 APK location: build/app/outputs/flutter-apk/"
+          echo "✅ Release build completed!"
           ls -lh build/app/outputs/flutter-apk/ || true
