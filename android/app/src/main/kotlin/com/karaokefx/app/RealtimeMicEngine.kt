@@ -27,7 +27,7 @@ class RealtimeMicEngine private constructor() {
     companion object {
         private const val TAG = "RealtimeMicEngine"
         private const val SAMPLE_RATE = 44100
-        private const val CHUNK_SIZE = 256 // ~5.8ms ultra-low latency FastMixer path
+        private const val CHUNK_SIZE = 512 // 512 frames (~11.6ms) - optimal & stable low-latency without buffer underrun/crackling
 
         @Volatile
         private var instance: RealtimeMicEngine? = null
@@ -41,6 +41,8 @@ class RealtimeMicEngine private constructor() {
 
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
+    private var echoCanceler: AcousticEchoCanceler? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
 
     private var workerThread: Thread? = null
     @Volatile
@@ -48,7 +50,7 @@ class RealtimeMicEngine private constructor() {
 
     // ─── DSP Control Parameters (Thread-safe) ─────────────────────────────
     @Volatile var isEnabled: Boolean = true
-    @Volatile var inputGain: Float = 1.5f
+    @Volatile var inputGain: Float = 1.2f
 
     // Noise Gate
     @Volatile var noiseGateEnabled: Boolean = false
@@ -113,11 +115,6 @@ class RealtimeMicEngine private constructor() {
     // AudioManager reference — injected by MainActivity
     var audioManager: AudioManager? = null
 
-    // High-Pass Filter (Low-Cut @ 85Hz) state to filter mechanical chassis rumble & bass speaker bleed
-    private var hpfPrevIn = 0.0f
-    private var hpfPrevOut = 0.0f
-    private val HPF_ALPHA = 0.9880f
-
     @Synchronized
     fun start(): Boolean {
         if (isRunning) return true
@@ -136,9 +133,9 @@ class RealtimeMicEngine private constructor() {
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT
             )
-            val recBufSize = max(minRecBuf, CHUNK_SIZE * 2)
+            val recBufSize = max(minRecBuf, CHUNK_SIZE * 4)
 
-            // AudioSource.MIC provides pure, ultra-sensitive hardware capture without telephony ducking
+            // AudioSource.MIC provides pure, clean hardware audio capture
             audioRecord = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 SAMPLE_RATE,
@@ -153,17 +150,37 @@ class RealtimeMicEngine private constructor() {
                 return false
             }
 
+            // Attach hardware AEC / Noise suppressor if supported by device chipset
+            val sessionId = audioRecord?.audioSessionId ?: 0
+            if (AcousticEchoCanceler.isAvailable()) {
+                try {
+                    echoCanceler = AcousticEchoCanceler.create(sessionId)
+                    echoCanceler?.enabled = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not enable AcousticEchoCanceler: ${e.message}")
+                }
+            }
+
+            if (NoiseSuppressor.isAvailable()) {
+                try {
+                    noiseSuppressor = NoiseSuppressor.create(sessionId)
+                    noiseSuppressor?.enabled = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not enable NoiseSuppressor: ${e.message}")
+                }
+            }
+
             val minTrackBuf = AudioTrack.getMinBufferSize(
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_OUT_MONO,
                 AudioFormat.ENCODING_PCM_16BIT
             )
-            val trackBufSize = max(minTrackBuf, CHUNK_SIZE * 2)
+            val trackBufSize = max(minTrackBuf, CHUNK_SIZE * 4)
 
-            // USAGE_MEDIA + CONTENT_TYPE_MUSIC activates Android's hardware FastMixer (ultra low latency)
+            // USAGE_MEDIA routes to standard FastMixer path
             val audioAttributes = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
 
             val audioFormat = AudioFormat.Builder()
@@ -186,16 +203,11 @@ class RealtimeMicEngine private constructor() {
                 return false
             }
 
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                try {
-                    audioTrack?.setBufferSizeInFrames(CHUNK_SIZE * 2)
-                } catch (_: Exception) {}
-            }
-
             audioRecord?.startRecording()
             audioTrack?.play()
 
             isRunning = true
+            currentGateGain = 1.0f
 
             workerThread = Thread({
                 Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -205,7 +217,7 @@ class RealtimeMicEngine private constructor() {
                 start()
             }
 
-            Log.i(TAG, "RealtimeMicEngine started (SampleRate: $SAMPLE_RATE, Chunk: $CHUNK_SIZE, Low-Latency FastMixer)")
+            Log.i(TAG, "RealtimeMicEngine started (SampleRate: $SAMPLE_RATE, Chunk: $CHUNK_SIZE)")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Error starting RealtimeMicEngine: ${e.message}", e)
@@ -223,6 +235,16 @@ class RealtimeMicEngine private constructor() {
         } catch (_: Exception) {}
 
         try {
+            echoCanceler?.release()
+            echoCanceler = null
+        } catch (_: Exception) {}
+
+        try {
+            noiseSuppressor?.release()
+            noiseSuppressor = null
+        } catch (_: Exception) {}
+
+        try {
             audioRecord?.stop()
             audioRecord?.release()
             audioRecord = null
@@ -235,8 +257,6 @@ class RealtimeMicEngine private constructor() {
         } catch (_: Exception) {}
 
         liveVuLevel = 0.0f
-        hpfPrevIn = 0.0f
-        hpfPrevOut = 0.0f
         Log.i(TAG, "RealtimeMicEngine stopped")
     }
 
@@ -310,10 +330,14 @@ class RealtimeMicEngine private constructor() {
                 continue
             }
 
-            // 2. Responsive Noise Gate: fast attack (2ms) so words aren't cut, smooth release (35ms)
-            val gateTarget = if (!noiseGateEnabled || instantDb >= noiseGateThresholdDb) 1.0f else 0.0f
-            val gateSpeed = if (gateTarget > currentGateGain) 0.35f else 0.06f
-            currentGateGain += (gateTarget - currentGateGain) * gateSpeed
+            // 2. Noise Gate logic (Clean bypass when disabled)
+            if (!noiseGateEnabled) {
+                currentGateGain = 1.0f
+            } else {
+                val gateTarget = if (instantDb >= noiseGateThresholdDb) 1.0f else 0.0f
+                val gateSpeed = if (gateTarget > currentGateGain) 0.35f else 0.06f
+                currentGateGain += (gateTarget - currentGateGain) * gateSpeed
+            }
 
             // 3. DSP Effects Chain
             val gain = inputGain
@@ -340,12 +364,7 @@ class RealtimeMicEngine private constructor() {
             val semitones = pitchSemitones
 
             for (i in 0 until readCount) {
-                // High-Pass Filter (Low-Cut @ 85Hz) removes speaker rumble / mechanical vibration without hurting vocals
-                val hpfOut = HPF_ALPHA * (hpfPrevOut + floatBuf[i] - hpfPrevIn)
-                hpfPrevIn = floatBuf[i]
-                hpfPrevOut = hpfOut
-
-                var s = hpfOut * gain * currentGateGain
+                var s = floatBuf[i] * gain * currentGateGain
 
                 // EQ Filtering (Low shelf ~300Hz, High shelf ~3500Hz, Mid)
                 if (isEq) {
