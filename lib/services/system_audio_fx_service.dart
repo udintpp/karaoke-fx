@@ -312,5 +312,33 @@ class SystemAudioFxService {
       await _channel.invokeMethod('updateRealtimeMicSettings', settings);
     } catch (_) {}
   }
+
+  // ─── Native Audio Recording Methods ───────────────────────────────
+  Future<bool> startAudioRecording(String outputPath) async {
+    try {
+      final res = await _channel.invokeMethod<bool>('startAudioRecording', {'outputPath': outputPath});
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<String?> stopAudioRecording() async {
+    try {
+      final res = await _channel.invokeMethod<String>('stopAudioRecording');
+      return res;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> isAudioRecording() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('isAudioRecording');
+      return res ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 

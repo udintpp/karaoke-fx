@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'providers/mic_fx_provider.dart';
 import 'providers/media_fx_provider.dart';
+import 'providers/record_provider.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -20,6 +21,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => MicFxProvider()),
         ChangeNotifierProvider(create: (_) => MediaFxProvider()),
+        ChangeNotifierProvider(create: (_) => RecordProvider()),
       ],
       child: const KaraokeFxApp(),
     ),

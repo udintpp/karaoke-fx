@@ -4,9 +4,11 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../providers/mic_fx_provider.dart';
 import '../providers/media_fx_provider.dart';
+import '../providers/record_provider.dart';
 import '../theme/app_theme.dart';
 import 'mic_fx_screen.dart';
 import 'media_fx_screen.dart';
+import 'studio_record_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       setState(() => _selectedTab = _tabController.index);
     });
@@ -54,6 +56,7 @@ class _HomeScreenState extends State<HomeScreen>
                 children: const [
                   MicFxScreen(),
                   MediaFxScreen(),
+                  StudioRecordScreen(),
                 ],
               ),
             ),
@@ -118,6 +121,14 @@ class _HomeScreenState extends State<HomeScreen>
               active: media.isPlaying,
             ),
           ),
+          const SizedBox(width: 8),
+          Consumer<RecordProvider>(
+            builder: (_, rec, __) => _StatusDot(
+              color: rec.isRecording ? Colors.redAccent : AppTheme.textSecondary,
+              label: 'REC',
+              active: rec.isRecording,
+            ),
+          ),
         ],
       ),
     ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2);
@@ -136,7 +147,9 @@ class _HomeScreenState extends State<HomeScreen>
           gradient: LinearGradient(
             colors: _selectedTab == 0
                 ? [AppTheme.primary, AppTheme.secondary]
-                : [AppTheme.accent, AppTheme.accent.withBlue(200)],
+                : _selectedTab == 1
+                    ? [AppTheme.accent, AppTheme.accent.withBlue(200)]
+                    : [const Color(0xFFFF416C), const Color(0xFFFF4B2B)],
           ),
           borderRadius: BorderRadius.circular(12),
         ),
@@ -146,18 +159,24 @@ class _HomeScreenState extends State<HomeScreen>
         unselectedLabelColor: AppTheme.textSecondary,
         labelStyle: const TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 14,
+          fontSize: 12,
         ),
         tabs: const [
           Tab(
             icon: Icon(Icons.mic_rounded, size: 20),
-            text: 'Microphone FX',
+            text: 'Efek Mic',
             iconMargin: EdgeInsets.only(bottom: 2),
             height: 52,
           ),
           Tab(
             icon: Icon(Icons.music_note_rounded, size: 20),
-            text: 'Media FX',
+            text: 'Musik & FX',
+            iconMargin: EdgeInsets.only(bottom: 2),
+            height: 52,
+          ),
+          Tab(
+            icon: Icon(Icons.videocam_rounded, size: 20),
+            text: 'Studio Rekam',
             iconMargin: EdgeInsets.only(bottom: 2),
             height: 52,
           ),

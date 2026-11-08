@@ -465,6 +465,23 @@ class MainActivity : FlutterActivity() {
                         result.error("MIC_ERROR", e.message, null)
                     }
                 }
+                // ─── Native Audio Recording Methods ─────────────────────────
+                "startAudioRecording" -> {
+                    val path = call.argument<String>("outputPath") ?: ""
+                    if (path.isEmpty()) {
+                        result.error("INVALID_PATH", "Output path cannot be empty", null)
+                    } else {
+                        val success = RealtimeMicEngine.getInstance().startAudioRecording(path)
+                        result.success(success)
+                    }
+                }
+                "stopAudioRecording" -> {
+                    val savedPath = RealtimeMicEngine.getInstance().stopAudioRecording()
+                    result.success(savedPath)
+                }
+                "isAudioRecording" -> {
+                    result.success(RealtimeMicEngine.getInstance().isAudioRecording())
+                }
                 else -> result.notImplemented()
             }
         }

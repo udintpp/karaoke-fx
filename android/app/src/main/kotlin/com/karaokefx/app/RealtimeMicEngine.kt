@@ -115,6 +115,116 @@ class RealtimeMicEngine private constructor() {
     // AudioManager reference — injected by MainActivity
     var audioManager: AudioManager? = null
 
+    // ─── Native WAV Audio Recording State ─────────────────────────────────
+    @Volatile private var isRecordingAudio = false
+    private var recordOutputFile: java.io.File? = null
+    private var recordOutputStream: java.io.FileOutputStream? = null
+    private var totalPcmBytesWritten = 0L
+
+    @Synchronized
+    fun startAudioRecording(outputPath: String): Boolean {
+        try {
+            stopAudioRecording()
+            val file = java.io.File(outputPath)
+            file.parentFile?.mkdirs()
+            val fos = java.io.FileOutputStream(file)
+            // Write placeholder 44-byte WAV header
+            fos.write(ByteArray(44))
+            recordOutputFile = file
+            recordOutputStream = fos
+            totalPcmBytesWritten = 0L
+            isRecordingAudio = true
+            Log.i(TAG, "Audio recording started -> $outputPath")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start audio recording: ${e.message}", e)
+            return false
+        }
+    }
+
+    @Synchronized
+    fun stopAudioRecording(): String? {
+        if (!isRecordingAudio) return null
+        isRecordingAudio = false
+        val file = recordOutputFile ?: return null
+        try {
+            recordOutputStream?.flush()
+            recordOutputStream?.close()
+            recordOutputStream = null
+
+            // Write final WAV header with actual data size
+            writeWavHeader(file, totalPcmBytesWritten, SAMPLE_RATE, 1, 16)
+            Log.i(TAG, "Audio recording finished -> ${file.absolutePath} (${totalPcmBytesWritten} bytes)")
+            val path = file.absolutePath
+            recordOutputFile = null
+            return path
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finalizing recording: ${e.message}", e)
+            return null
+        }
+    }
+
+    fun isAudioRecording(): Boolean = isRecordingAudio
+
+    private fun writeWavHeader(file: java.io.File, totalAudioLen: Long, sampleRate: Int, channels: Int, bitRate: Int) {
+        val totalDataLen = totalAudioLen + 36
+        val byteRate = (bitRate * sampleRate * channels / 8).toLong()
+        val header = ByteArray(44)
+        header[0] = 'R'.code.toByte()
+        header[1] = 'I'.code.toByte()
+        header[2] = 'F'.code.toByte()
+        header[3] = 'F'.code.toByte()
+        header[4] = (totalDataLen and 0xff).toByte()
+        header[5] = (totalDataLen shr 8 and 0xff).toByte()
+        header[6] = (totalDataLen shr 16 and 0xff).toByte()
+        header[7] = (totalDataLen shr 24 and 0xff).toByte()
+        header[8] = 'W'.code.toByte()
+        header[9] = 'A'.code.toByte()
+        header[10] = 'V'.code.toByte()
+        header[11] = 'E'.code.toByte()
+        header[12] = 'f'.code.toByte()
+        header[13] = 'm'.code.toByte()
+        header[14] = 't'.code.toByte()
+        header[15] = ' '.code.toByte()
+        header[16] = 16
+        header[17] = 0
+        header[18] = 0
+        header[19] = 0
+        header[20] = 1 // PCM
+        header[21] = 0
+        header[22] = channels.toByte()
+        header[23] = 0
+        header[24] = (sampleRate and 0xff).toByte()
+        header[25] = (sampleRate shr 8 and 0xff).toByte()
+        header[26] = (sampleRate shr 16 and 0xff).toByte()
+        header[27] = (sampleRate shr 24 and 0xff).toByte()
+        header[28] = (byteRate and 0xff).toByte()
+        header[29] = (byteRate shr 8 and 0xff).toByte()
+        header[30] = (byteRate shr 16 and 0xff).toByte()
+        header[31] = (byteRate shr 24 and 0xff).toByte()
+        header[32] = (channels * bitRate / 8).toByte()
+        header[33] = 0
+        header[34] = bitRate.toByte()
+        header[35] = 0
+        header[36] = 'd'.code.toByte()
+        header[37] = 'a'.code.toByte()
+        header[38] = 't'.code.toByte()
+        header[39] = 'a'.code.toByte()
+        header[40] = (totalAudioLen and 0xff).toByte()
+        header[41] = (totalAudioLen shr 8 and 0xff).toByte()
+        header[42] = (totalAudioLen shr 16 and 0xff).toByte()
+        header[43] = (totalAudioLen shr 24 and 0xff).toByte()
+
+        try {
+            val raf = java.io.RandomAccessFile(file, "rw")
+            raf.seek(0)
+            raf.write(header)
+            raf.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error writing WAV header: ${e.message}", e)
+        }
+    }
+
     @Synchronized
     fun start(): Boolean {
         if (isRunning) return true
@@ -460,7 +570,26 @@ class RealtimeMicEngine private constructor() {
                 pcmOut[i] = (limited.coerceIn(-1.0f, 1.0f) * 32767.0f).toInt().toShort()
             }
 
-            // 4. Output directly to AudioTrack with low latency
+            // 4. If recording audio is active, write PCM bytes to WAV stream
+            if (isRecordingAudio) {
+                try {
+                    val stream = recordOutputStream
+                    if (stream != null) {
+                        val byteBuffer = ByteArray(readCount * 2)
+                        for (b in 0 until readCount) {
+                            val sample = pcmOut[b].toInt()
+                            byteBuffer[b * 2] = (sample and 0xff).toByte()
+                            byteBuffer[b * 2 + 1] = ((sample shr 8) and 0xff).toByte()
+                        }
+                        stream.write(byteBuffer)
+                        totalPcmBytesWritten += byteBuffer.size
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Recording stream write error: ${e.message}")
+                }
+            }
+
+            // 5. Output directly to AudioTrack with low latency
             track.write(pcmOut, 0, readCount)
         }
     }
