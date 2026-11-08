@@ -143,16 +143,10 @@ class CameraGlRenderer(
             varying vec2 vUprightUv;
 
             vec2 uprightToCameraOes(vec2 uprightMirroredUv) {
-                vec2 rawUv = uprightMirroredUv;
-                if (uRotationDegrees == 90) {
-                    rawUv = vec2(uprightMirroredUv.y, 1.0 - uprightMirroredUv.x);
-                } else if (uRotationDegrees == 180) {
-                    rawUv = vec2(1.0 - uprightMirroredUv.x, 1.0 - uprightMirroredUv.y);
-                } else if (uRotationDegrees == 270) {
-                    rawUv = vec2(1.0 - uprightMirroredUv.y, uprightMirroredUv.x);
-                }
-                rawUv = clamp(rawUv, 0.002, 0.998);
+                vec2 rawUv = clamp(uprightMirroredUv, 0.002, 0.998);
+                // Convert Top-Left (0,0) -> Bottom-Left GL (0,0) for SurfaceTexture matrix
                 vec4 glUv = vec4(rawUv.x, 1.0 - rawUv.y, 0.0, 1.0);
+                // uStMatrix from SurfaceTexture.getTransformMatrix automatically handles camera orientation!
                 return clamp((uStMatrix * glUv).xy, 0.001, 0.999);
             }
 
@@ -357,7 +351,7 @@ class CameraGlRenderer(
     private var uploadedMaskH = 1
 
     // Camera transform & settings
-    @Volatile var rotationDegrees = 270
+    @Volatile var rotationDegrees = 0
     @Volatile var isFrontCamera = true
     @Volatile var camPortraitW = 720
     @Volatile var camPortraitH = 960

@@ -287,54 +287,60 @@ class CameraBgRemoverEngine(
                         renderer?.analysisPortraitH = imageProxy.height
                     }
 
-                    val inputImage = InputImage.fromMediaImage(mediaImage, rot)
-                    seg.process(inputImage)
-                        .addOnSuccessListener { mask ->
-                            try {
-                                val w = mask.width
-                                val h = mask.height
-                                val buf = mask.buffer
-                                buf.rewind()
-                                val count = w * h
+                    try {
+                        val inputImage = InputImage.fromMediaImage(mediaImage, rot)
+                        seg.process(inputImage)
+                            .addOnSuccessListener { mask ->
+                                try {
+                                    val w = mask.width
+                                    val h = mask.height
+                                    val buf = mask.buffer
+                                    buf.rewind()
+                                    val count = w * h
 
-                                if (prevMaskW != w || prevMaskH != h || prevFloatMask == null || prevFloatMask!!.size != count) {
-                                    prevFloatMask = FloatArray(count)
-                                    maskByteArray = ByteArray(count)
-                                    prevMaskW = w
-                                    prevMaskH = h
-                                    val cache = prevFloatMask!!
-                                    val outBytes = maskByteArray!!
-                                    for (i in 0 until count) {
-                                        val conf = buf.float.coerceIn(0.0f, 1.0f)
-                                        cache[i] = conf
-                                        outBytes[i] = (conf * 255.0f + 0.5f).toInt().coerceIn(0, 255).toByte()
+                                    if (prevMaskW != w || prevMaskH != h || prevFloatMask == null || prevFloatMask!!.size != count) {
+                                        prevFloatMask = FloatArray(count)
+                                        maskByteArray = ByteArray(count)
+                                        prevMaskW = w
+                                        prevMaskH = h
+                                        val cache = prevFloatMask!!
+                                        val outBytes = maskByteArray!!
+                                        for (i in 0 until count) {
+                                            val conf = buf.float.coerceIn(0.0f, 1.0f)
+                                            cache[i] = conf
+                                            outBytes[i] = (conf * 255.0f + 0.5f).toInt().coerceIn(0, 255).toByte()
+                                        }
+                                    } else {
+                                        val cache = prevFloatMask!!
+                                        val outBytes = maskByteArray!!
+                                        for (i in 0 until count) {
+                                            val raw = buf.float.coerceIn(0.0f, 1.0f)
+                                            // Smooth temporal blend removes edge flicker while keeping rapid hand movement crisp
+                                            val smoothed = cache[i] * 0.25f + raw * 0.75f
+                                            cache[i] = smoothed
+                                            outBytes[i] = (smoothed * 255.0f + 0.5f).toInt().coerceIn(0, 255).toByte()
+                                        }
                                     }
-                                } else {
-                                    val cache = prevFloatMask!!
-                                    val outBytes = maskByteArray!!
-                                    for (i in 0 until count) {
-                                        val raw = buf.float.coerceIn(0.0f, 1.0f)
-                                        // Smooth temporal blend removes edge flicker while keeping rapid hand movement crisp
-                                        val smoothed = cache[i] * 0.25f + raw * 0.75f
-                                        cache[i] = smoothed
-                                        outBytes[i] = (smoothed * 255.0f + 0.5f).toInt().coerceIn(0, 255).toByte()
-                                    }
-                                }
 
-                                maskByteArray?.let { bytes ->
-                                    renderer?.updateMask(bytes, w, h)
+                                    maskByteArray?.let { bytes ->
+                                        renderer?.updateMask(bytes, w, h)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Mask conversion warning: ${e.message}")
                                 }
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Mask conversion warning: ${e.message}")
                             }
-                        }
-                        .addOnFailureListener { e ->
-                            Log.w(TAG, "Segmentation failure: ${e.message}")
-                        }
-                        .addOnCompleteListener {
-                            imageProxy.close()
-                            isSegmenting.set(false)
-                        }
+                            .addOnFailureListener { e ->
+                                Log.w(TAG, "Segmentation failure: ${e.message}")
+                            }
+                            .addOnCompleteListener {
+                                imageProxy.close()
+                                isSegmenting.set(false)
+                            }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Segmentation invocation error: ${e.message}", e)
+                        imageProxy.close()
+                        isSegmenting.set(false)
+                    }
                 }
 
                 if (lifecycleOwner == null) {
