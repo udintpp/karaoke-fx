@@ -292,7 +292,7 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: Colors.black60,
+                              color: Colors.black54,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: Colors.white24),
                             ),
