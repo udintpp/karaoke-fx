@@ -497,7 +497,16 @@ class MainActivity : FlutterActivity() {
                 "initCamera" -> {
                     val preferFront = call.argument<Boolean>("preferFront") ?: true
                     if (cameraBgEngine == null) {
-                        cameraBgEngine = CameraBgRemoverEngine(this, flutterEngine.renderer)
+                        cameraBgEngine = CameraBgRemoverEngine(this, flutterEngine.renderer).apply {
+                            onOrientationChanged = { deg, isLandscape ->
+                                runOnUiThread {
+                                    cameraChannel.invokeMethod(
+                                        "onOrientationChanged",
+                                        mapOf("rotation" to deg, "isLandscape" to isLandscape)
+                                    )
+                                }
+                            }
+                        }
                     }
                     cameraBgEngine?.initialize(
                         preferFront = preferFront,

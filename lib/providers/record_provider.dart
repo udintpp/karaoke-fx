@@ -27,6 +27,8 @@ class RecordProvider extends ChangeNotifier {
   bool _isFrontCamera = true;
   bool _hasMultipleCameras = true;
   bool _isFlashOn = false;
+  int _sensorRotation = 0;
+  bool _isLandscape = false;
 
   // Recording State
   RecordingMode _mode = RecordingMode.video;
@@ -65,6 +67,8 @@ class RecordProvider extends ChangeNotifier {
   bool get isFrontCamera => _isFrontCamera;
   bool get hasMultipleCameras => _hasMultipleCameras;
   bool get isFlashOn => _isFlashOn;
+  int get sensorRotation => _sensorRotation;
+  bool get isLandscape => _isLandscape;
 
   RecordingMode get mode => _mode;
   RecordState get state => _state;
@@ -136,6 +140,13 @@ class RecordProvider extends ChangeNotifier {
         _isFrontCamera = info['isFrontCamera'] as bool? ?? true;
         _isCameraInitialized = true;
         _errorMessage = null;
+
+        // Hook auto-rotation listener
+        _cameraService.onOrientationChanged = (rot, isLandscape) {
+          _sensorRotation = rot;
+          _isLandscape = isLandscape;
+          notifyListeners();
+        };
 
         // Sync initial effect state to OpenGL ES engine
         await _cameraService.setCutoutMode(_cutoutMode.name, _cutoutSensitivity);

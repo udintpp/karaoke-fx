@@ -34,8 +34,8 @@ import kotlin.math.max
  *         - Outputs identically to BOTH Flutter Preview EGLSurface AND MediaCodec H.264 Input EGLSurface!
  */
 class CameraGlRenderer(
-    val outputWidth: Int = 720,
-    val outputHeight: Int = 960
+    var outputWidth: Int = 720,
+    var outputHeight: Int = 960
 ) {
     companion object {
         private const val TAG = "CameraGlRenderer"
@@ -109,6 +109,7 @@ class CameraGlRenderer(
 
             uniform mat4 uStMatrix;
             uniform int uRotationDegrees;
+            uniform int uDeviceRotation;
             uniform float uIsFrontCamera;
             uniform vec2 uCamCropScale;
             uniform vec2 uMaskCropScale;
@@ -142,18 +143,22 @@ class CameraGlRenderer(
 
             varying vec2 vUprightUv;
 
+            vec2 rotateScreenUvToPortrait(vec2 uv, int devRot) {
+                vec2 c = clamp(uv, 0.001, 0.999);
+                if (devRot == 90) {
+                    return vec2(1.0 - c.y, c.x);
+                } else if (devRot == 180) {
+                    return vec2(1.0 - c.x, 1.0 - c.y);
+                } else if (devRot == 270) {
+                    return vec2(c.y, 1.0 - c.x);
+                }
+                return c;
+            }
+
             vec2 uprightToCameraOes(vec2 uprightMirroredUv) {
                 vec2 c = clamp(uprightMirroredUv, 0.002, 0.998);
-                vec2 rawUv = c;
-                if (uRotationDegrees == 90) {
-                    rawUv = vec2(1.0 - c.y, c.x);
-                } else if (uRotationDegrees == 180) {
-                    rawUv = vec2(1.0 - c.x, 1.0 - c.y);
-                } else if (uRotationDegrees == 270) {
-                    rawUv = vec2(c.y, 1.0 - c.x);
-                }
                 // Convert Top-Left (0,0) -> Bottom-Left GL (0,0) for SurfaceTexture matrix
-                vec4 glUv = vec4(rawUv.x, 1.0 - rawUv.y, 0.0, 1.0);
+                vec4 glUv = vec4(c.x, 1.0 - c.y, 0.0, 1.0);
                 return clamp((uStMatrix * glUv).xy, 0.001, 0.999);
             }
 
@@ -195,8 +200,10 @@ class CameraGlRenderer(
             }
 
             void main() {
+                vec2 sceneUv = rotateScreenUvToPortrait(vUprightUv, uDeviceRotation);
+
                 // 1. Center-crop portrait UV for Camera & Mask
-                vec2 camUpright = (vUprightUv - vec2(0.5)) * uCamCropScale + vec2(0.5);
+                vec2 camUpright = (sceneUv - vec2(0.5)) * uCamCropScale + vec2(0.5);
                 // Horizontal mirror for front selfie camera
                 vec2 camMirrored = vec2(
                     uIsFrontCamera > 0.5 ? (1.0 - camUpright.x) : camUpright.x,
@@ -218,12 +225,14 @@ class CameraGlRenderer(
                 if (uCutoutMode == 1 || uCutoutMode == 2) {
                     // AI Person Segmentation Mask (5-tap smooth anti-aliased edge sampling)
                     if (uHasMask == 1) {
-                        vec2 maskUpright = (vUprightUv - vec2(0.5)) * uMaskCropScale + vec2(0.5);
-                        vec2 maskMirrored = vec2(
-                            uIsFrontCamera > 0.5 ? (1.0 - maskUpright.x) : maskUpright.x,
+                        vec2 maskUpright = (sceneUv - vec2(0.5)) * uMaskCropScale + vec2(0.5);
+                        // FIXED: Do NOT invert X for front camera!
+                        // Keeps mask movement 100% synchronized with person motion (moving right follows right).
+                        vec2 maskCoord = vec2(
+                            maskUpright.x,
                             maskUpright.y
                         );
-                        vec2 mUv = clamp(maskMirrored, 0.002, 0.998);
+                        vec2 mUv = clamp(maskCoord, 0.002, 0.998);
                         vec2 off = uMaskTexel * 1.35;
                         float m0 = texture2D(uMaskTex, mUv).r;
                         float m1 = texture2D(uMaskTex, clamp(mUv + vec2(-off.x, -off.y), 0.002, 0.998)).r;
@@ -281,11 +290,11 @@ class CameraGlRenderer(
                 vec3 bgRgb = vec3(0.08, 0.08, 0.14);
                 if (uHasBgTex == 1) {
                     vec2 bgUv = uBgIsVideoFbo == 1
-                        ? vUprightUv
-                        : clamp((vUprightUv - vec2(0.5)) * uBgCropScale + vec2(0.5), 0.001, 0.999);
+                        ? sceneUv
+                        : clamp((sceneUv - vec2(0.5)) * uBgCropScale + vec2(0.5), 0.001, 0.999);
                     bgRgb = texture2D(uBgTex, bgUv).rgb;
                 }
-                bgRgb = computeMotionOverlay(vUprightUv, bgRgb);
+                bgRgb = computeMotionOverlay(sceneUv, bgRgb);
 
                 vec3 finalRgb = mix(bgRgb, personRgb, personAlpha);
                 gl_FragColor = vec4(finalRgb, 1.0);
@@ -359,6 +368,7 @@ class CameraGlRenderer(
 
     // Camera transform & settings
     @Volatile var rotationDegrees = 0
+    @Volatile var deviceRotationDegrees = 0
     @Volatile var isFrontCamera = true
     @Volatile var camPortraitW = 720
     @Volatile var camPortraitH = 960
@@ -486,15 +496,20 @@ class CameraGlRenderer(
         }
     }
 
-    fun attachRecorderSurface(recorder: CompositedMp4Recorder, surface: Surface) {
+    @Volatile private var encoderWidth = 720
+    @Volatile private var encoderHeight = 960
+
+    fun attachRecorderSurface(recorder: CompositedMp4Recorder, surface: Surface, width: Int = outputWidth, height: Int = outputHeight) {
         postOnGlThread {
             detachEncoderSurfaceInternal()
             val cfg = eglConfig ?: return@postOnGlThread
             val attribs = intArrayOf(EGL14.EGL_NONE)
             encoderEglSurface = EGL14.eglCreateWindowSurface(eglDisplay, cfg, surface, attribs, 0)
+            encoderWidth = width
+            encoderHeight = height
             lastEncodedPtsNs = 0L
             activeRecorder = recorder
-            Log.i(TAG, "Encoder EGLSurface attached for video recording")
+            Log.i(TAG, "Encoder EGLSurface attached for video recording (${width}x${height})")
         }
     }
 
@@ -663,14 +678,14 @@ class CameraGlRenderer(
         uploadPendingTextures()
 
         // Draw to Flutter Preview Texture Surface
-        drawCompositeScene()
+        drawCompositeScene(outputWidth, outputHeight)
         EGL14.eglSwapBuffers(eglDisplay, previewEglSurface)
 
         // Draw to MP4 Encoder Surface if actively recording
         val rec = activeRecorder
         if (rec != null && rec.isRecording && encoderEglSurface != EGL14.EGL_NO_SURFACE) {
             EGL14.eglMakeCurrent(eglDisplay, encoderEglSurface, encoderEglSurface, eglContext)
-            drawCompositeScene()
+            drawCompositeScene(encoderWidth, encoderHeight)
             val nowNs = System.nanoTime()
             val ptsNs = max(nowNs - rec.startTimeNs, lastEncodedPtsNs + 1_000_000L)
             lastEncodedPtsNs = ptsNs
@@ -772,8 +787,8 @@ class CameraGlRenderer(
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
     }
 
-    private fun drawCompositeScene() {
-        GLES20.glViewport(0, 0, outputWidth, outputHeight)
+    private fun drawCompositeScene(targetW: Int = outputWidth, targetH: Int = outputHeight) {
+        GLES20.glViewport(0, 0, targetW, targetH)
         GLES20.glClearColor(0.06f, 0.06f, 0.1f, 1.0f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
         GLES20.glUseProgram(mainProgram)
@@ -799,15 +814,17 @@ class CameraGlRenderer(
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, if (useVideoFbo) bgFboTexId else bgImageTexId)
         GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uBgTex"), 2)
 
-        val (camSx, camSy) = computeAspectFillScale(camPortraitW, camPortraitH, outputWidth, outputHeight)
-        val (maskSx, maskSy) = computeAspectFillScale(analysisPortraitW, analysisPortraitH, outputWidth, outputHeight)
-        val (bgSx, bgSy) = computeAspectFillScale(bgImageW, bgImageH, outputWidth, outputHeight)
+        val isLandscape = deviceRotationDegrees == 90 || deviceRotationDegrees == 270
+        val effDstW = if (isLandscape) targetH else targetW
+        val effDstH = if (isLandscape) targetW else targetH
 
-        val matrixHasRot = kotlin.math.abs(stMatrix[1]) > 0.3f || kotlin.math.abs(stMatrix[4]) > 0.3f
-        val effectiveCamRot = if (matrixHasRot) 0 else rotationDegrees
+        val (camSx, camSy) = computeAspectFillScale(camPortraitW, camPortraitH, effDstW, effDstH)
+        val (maskSx, maskSy) = computeAspectFillScale(analysisPortraitW, analysisPortraitH, effDstW, effDstH)
+        val (bgSx, bgSy) = computeAspectFillScale(bgImageW, bgImageH, effDstW, effDstH)
 
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(mainProgram, "uStMatrix"), 1, false, stMatrix, 0)
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uRotationDegrees"), effectiveCamRot)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uRotationDegrees"), 0)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uDeviceRotation"), deviceRotationDegrees)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(mainProgram, "uIsFrontCamera"), if (isFrontCamera) 1.0f else 0.0f)
 
         GLES20.glUniform2f(GLES20.glGetUniformLocation(mainProgram, "uCamCropScale"), camSx, camSy)

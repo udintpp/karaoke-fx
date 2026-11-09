@@ -167,7 +167,7 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
             }
           },
           child: AspectRatio(
-            aspectRatio: MediaQuery.of(context).orientation == Orientation.landscape ? 4 / 3 : 3 / 4,
+            aspectRatio: (MediaQuery.of(context).orientation == Orientation.landscape || rec.isLandscape) ? 4 / 3 : 3 / 4,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: Stack(

@@ -8,7 +8,19 @@ class CameraBgRemoverService {
   static final CameraBgRemoverService _instance =
       CameraBgRemoverService._internal();
   factory CameraBgRemoverService() => _instance;
-  CameraBgRemoverService._internal();
+
+  void Function(int rotation, bool isLandscape)? onOrientationChanged;
+
+  CameraBgRemoverService._internal() {
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onOrientationChanged') {
+        final args = call.arguments as Map?;
+        final rot = (args?['rotation'] as int?) ?? 0;
+        final isLand = (args?['isLandscape'] as bool?) ?? false;
+        onOrientationChanged?.call(rot, isLand);
+      }
+    });
+  }
 
   /// Initialize native camera and GL surface, returns textureId, width, height, isFrontCamera, etc.
   Future<Map<String, dynamic>?> initCamera({bool preferFront = true}) async {

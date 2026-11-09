@@ -379,6 +379,8 @@ class CameraBgRemoverEngine(
         }, ContextCompat.getMainExecutor(context))
     }
 
+    var onOrientationChanged: ((Int, Boolean) -> Unit)? = null
+
     private fun setupOrientationEventListener() {
         if (orientationEventListener != null) return
         try {
@@ -396,6 +398,21 @@ class CameraBgRemoverEngine(
 
                     if (newRotation != currentDeviceRotation) {
                         currentDeviceRotation = newRotation
+                        val sensorDeg = when (newRotation) {
+                            Surface.ROTATION_90 -> 90
+                            Surface.ROTATION_180 -> 180
+                            Surface.ROTATION_270 -> 270
+                            else -> 0
+                        }
+                        val isLandscape = (sensorDeg == 90 || sensorDeg == 270)
+                        val outW = if (isLandscape) 960 else 720
+                        val outH = if (isLandscape) 720 else 960
+
+                        renderer?.deviceRotationDegrees = sensorDeg
+                        renderer?.outputWidth = outW
+                        renderer?.outputHeight = outH
+                        previewEntry?.surfaceTexture()?.setDefaultBufferSize(outW, outH)
+
                         mainHandler.post {
                             try {
                                 previewUseCase?.targetRotation = newRotation
@@ -403,6 +420,7 @@ class CameraBgRemoverEngine(
                             } catch (e: Exception) {
                                 Log.d(TAG, "Update targetRotation error: ${e.message}")
                             }
+                            onOrientationChanged?.invoke(sensorDeg, isLandscape)
                         }
                     }
                 }
@@ -674,10 +692,14 @@ class CameraBgRemoverEngine(
         val gl = renderer ?: return false
         if (mp4Recorder?.isRecording == true) return true
 
+        val isLandscape = (gl.deviceRotationDegrees == 90 || gl.deviceRotationDegrees == 270)
+        val recW = if (isLandscape) 960 else 720
+        val recH = if (isLandscape) 720 else 960
+
         val recorder = CompositedMp4Recorder()
-        val surface = recorder.start(outputPath, OUTPUT_WIDTH, OUTPUT_HEIGHT) ?: return false
+        val surface = recorder.start(outputPath, recW, recH) ?: return false
         mp4Recorder = recorder
-        gl.attachRecorderSurface(recorder, surface)
+        gl.attachRecorderSurface(recorder, surface, recW, recH)
         return true
     }
 
