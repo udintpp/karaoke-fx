@@ -332,10 +332,10 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
             ),
           ),
         ),
-      ),
-    );
-  },
-);
+      );
+    },
+  );
+}
 
   Widget _buildAudioStudioStage(
       BuildContext context, RecordProvider rec, MicFxProvider mic) {
