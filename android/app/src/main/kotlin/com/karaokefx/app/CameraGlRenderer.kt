@@ -109,6 +109,7 @@ class CameraGlRenderer(
 
             uniform mat4 uStMatrix;
             uniform int uRotationDegrees;
+            uniform int uDeviceRotation;
             uniform float uIsFrontCamera;
             uniform vec2 uCamCropScale;
             uniform vec2 uMaskCropScale;
@@ -142,18 +143,22 @@ class CameraGlRenderer(
 
             varying vec2 vUprightUv;
 
-            vec2 uprightToCameraOes(vec2 uprightCoord) {
-                vec2 c = clamp(uprightCoord, 0.002, 0.998);
-                vec2 rawUv = c;
-                if (uRotationDegrees == 90) {
-                    rawUv = vec2(c.y, 1.0 - c.x);
-                } else if (uRotationDegrees == 180) {
-                    rawUv = vec2(1.0 - c.x, 1.0 - c.y);
-                } else if (uRotationDegrees == 270) {
-                    rawUv = vec2(1.0 - c.y, c.x);
+            vec2 rotateScreenUvToPortrait(vec2 uv, int devRot) {
+                vec2 c = clamp(uv, 0.001, 0.999);
+                if (devRot == 90) {
+                    return vec2(1.0 - c.y, c.x);
+                } else if (devRot == 180) {
+                    return vec2(1.0 - c.x, 1.0 - c.y);
+                } else if (devRot == 270) {
+                    return vec2(c.y, 1.0 - c.x);
                 }
+                return c;
+            }
+
+            vec2 uprightToCameraOes(vec2 uprightMirroredUv) {
+                vec2 c = clamp(uprightMirroredUv, 0.002, 0.998);
                 // Convert Top-Left (0,0) -> Bottom-Left GL (0,0) for SurfaceTexture matrix
-                vec4 glUv = vec4(rawUv.x, 1.0 - rawUv.y, 0.0, 1.0);
+                vec4 glUv = vec4(c.x, 1.0 - c.y, 0.0, 1.0);
                 return clamp((uStMatrix * glUv).xy, 0.001, 0.999);
             }
 
@@ -195,15 +200,17 @@ class CameraGlRenderer(
             }
 
             void main() {
-                // 1. Mirror in screen space if front camera (so selfie behaves like a real mirror)
-                vec2 userScreenUv = vec2(
-                    uIsFrontCamera > 0.5 ? (1.0 - vUprightUv.x) : vUprightUv.x,
-                    vUprightUv.y
+                vec2 sceneUv = rotateScreenUvToPortrait(vUprightUv, uDeviceRotation);
+
+                // 1. Center-crop portrait UV for Camera & Mask
+                vec2 camUpright = (sceneUv - vec2(0.5)) * uCamCropScale + vec2(0.5);
+                // Horizontal mirror for front selfie camera
+                vec2 camMirrored = vec2(
+                    uIsFrontCamera > 0.5 ? (1.0 - camUpright.x) : camUpright.x,
+                    camUpright.y
                 );
 
-                // 2. Aspect-fill crop for camera & mask (1:1 pixel aspect ratio, zero stretching or squashing)
-                vec2 camUpright = (userScreenUv - vec2(0.5)) * uCamCropScale + vec2(0.5);
-                vec2 camOesUv = uprightToCameraOes(camUpright);
+                vec2 camOesUv = uprightToCameraOes(camMirrored);
                 vec3 rawCamRgb = texture2D(uCameraTex, camOesUv).rgb;
                 vec3 personRgb = applyColorFilter(rawCamRgb);
 
@@ -218,8 +225,14 @@ class CameraGlRenderer(
                 if (uCutoutMode == 1 || uCutoutMode == 2) {
                     // AI Person Segmentation Mask (5-tap smooth anti-aliased edge sampling)
                     if (uHasMask == 1) {
-                        vec2 maskUpright = (userScreenUv - vec2(0.5)) * uMaskCropScale + vec2(0.5);
-                        vec2 mUv = clamp(maskUpright, 0.002, 0.998);
+                        vec2 maskUpright = (sceneUv - vec2(0.5)) * uMaskCropScale + vec2(0.5);
+                        // FIXED: Do NOT invert X for front camera!
+                        // Keeps mask movement 100% synchronized with person motion (moving right follows right).
+                        vec2 maskCoord = vec2(
+                            maskUpright.x,
+                            maskUpright.y
+                        );
+                        vec2 mUv = clamp(maskCoord, 0.002, 0.998);
                         vec2 off = uMaskTexel * 1.35;
                         float m0 = texture2D(uMaskTex, mUv).r;
                         float m1 = texture2D(uMaskTex, clamp(mUv + vec2(-off.x, -off.y), 0.002, 0.998)).r;
@@ -252,7 +265,7 @@ class CameraGlRenderer(
                     float cutoff = mix(0.32, 0.06, uSensitivity);
                     personAlpha = 1.0 - smoothstep(cutoff * 0.35, cutoff + 0.08, blueDom);
                     if (personAlpha < 0.98) {
-                        personRgb.g = min(personRgb.g, max(personRgb.r, personRgb.g) * 1.02 + 0.01);
+                        personRgb.b = min(personRgb.b, max(personRgb.r, personRgb.g) * 1.02 + 0.01);
                     }
                 }
 
@@ -260,14 +273,14 @@ class CameraGlRenderer(
                 if (uCutoutMode == 2) {
                     vec3 blurSum = rawCamRgb * 0.2;
                     float r = mix(0.008, 0.026, uSensitivity);
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2(-r, 0.0))).rgb * 0.1;
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2( r, 0.0))).rgb * 0.1;
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2(0.0, -r))).rgb * 0.1;
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2(0.0,  r))).rgb * 0.1;
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2(-r*0.7, -r*0.7))).rgb * 0.1;
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2( r*0.7, -r*0.7))).rgb * 0.1;
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2(-r*0.7,  r*0.7))).rgb * 0.1;
-                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camUpright + vec2( r*0.7,  r*0.7))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2(-r, 0.0))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2( r, 0.0))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2(0.0, -r))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2(0.0,  r))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2(-r*0.7, -r*0.7))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2( r*0.7, -r*0.7))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2(-r*0.7,  r*0.7))).rgb * 0.1;
+                    blurSum += texture2D(uCameraTex, uprightToCameraOes(camMirrored + vec2( r*0.7,  r*0.7))).rgb * 0.1;
                     vec3 blurredBg = applyColorFilter(blurSum);
                     gl_FragColor = vec4(mix(blurredBg, personRgb, personAlpha), 1.0);
                     return;
@@ -277,11 +290,11 @@ class CameraGlRenderer(
                 vec3 bgRgb = vec3(0.08, 0.08, 0.14);
                 if (uHasBgTex == 1) {
                     vec2 bgUv = uBgIsVideoFbo == 1
-                        ? vUprightUv
-                        : clamp((vUprightUv - vec2(0.5)) * uBgCropScale + vec2(0.5), 0.001, 0.999);
+                        ? sceneUv
+                        : clamp((sceneUv - vec2(0.5)) * uBgCropScale + vec2(0.5), 0.001, 0.999);
                     bgRgb = texture2D(uBgTex, bgUv).rgb;
                 }
-                bgRgb = computeMotionOverlay(vUprightUv, bgRgb);
+                bgRgb = computeMotionOverlay(sceneUv, bgRgb);
 
                 vec3 finalRgb = mix(bgRgb, personRgb, personAlpha);
                 gl_FragColor = vec4(finalRgb, 1.0);
@@ -479,22 +492,6 @@ class CameraGlRenderer(
                 colorOffset4[1] = matrix20[9] / 255.0f
                 colorOffset4[2] = matrix20[14] / 255.0f
                 colorOffset4[3] = matrix20[19] / 255.0f
-            }
-        }
-    }
-
-    fun updateOutputSize(w: Int, h: Int) {
-        if (outputWidth == w && outputHeight == h) return
-        outputWidth = w
-        outputHeight = h
-        postOnGlThread {
-            if (bgFboTexId != 0) {
-                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, bgFboTexId)
-                GLES20.glTexImage2D(
-                    GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA,
-                    outputWidth, outputHeight, 0,
-                    GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null
-                )
             }
         }
     }
@@ -817,15 +814,17 @@ class CameraGlRenderer(
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, if (useVideoFbo) bgFboTexId else bgImageTexId)
         GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uBgTex"), 2)
 
-        val (camSx, camSy) = computeAspectFillScale(camPortraitW, camPortraitH, targetW, targetH)
-        val (maskSx, maskSy) = computeAspectFillScale(analysisPortraitW, analysisPortraitH, targetW, targetH)
-        val (bgSx, bgSy) = computeAspectFillScale(bgImageW, bgImageH, targetW, targetH)
+        val isLandscape = deviceRotationDegrees == 90 || deviceRotationDegrees == 270
+        val effDstW = if (isLandscape) targetH else targetW
+        val effDstH = if (isLandscape) targetW else targetH
 
-        val matrixHasRot = kotlin.math.abs(stMatrix[1]) > 0.3f || kotlin.math.abs(stMatrix[4]) > 0.3f
-        val effectiveCamRot = if (matrixHasRot) 0 else rotationDegrees
+        val (camSx, camSy) = computeAspectFillScale(camPortraitW, camPortraitH, effDstW, effDstH)
+        val (maskSx, maskSy) = computeAspectFillScale(analysisPortraitW, analysisPortraitH, effDstW, effDstH)
+        val (bgSx, bgSy) = computeAspectFillScale(bgImageW, bgImageH, effDstW, effDstH)
 
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(mainProgram, "uStMatrix"), 1, false, stMatrix, 0)
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uRotationDegrees"), effectiveCamRot)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uRotationDegrees"), 0)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(mainProgram, "uDeviceRotation"), deviceRotationDegrees)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(mainProgram, "uIsFrontCamera"), if (isFrontCamera) 1.0f else 0.0f)
 
         GLES20.glUniform2f(GLES20.glGetUniformLocation(mainProgram, "uCamCropScale"), camSx, camSy)
