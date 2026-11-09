@@ -145,9 +145,16 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
 
   Widget _buildCameraStudioStage(
       BuildContext context, RecordProvider rec, MicFxProvider mic) {
+    final isLandscape = (MediaQuery.of(context).orientation == Orientation.landscape || rec.isLandscape);
+    final screenH = MediaQuery.of(context).size.height;
     return Builder(
       builder: (boxContext) {
-        return GestureDetector(
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: isLandscape ? (screenH * 0.72) : double.infinity,
+            ),
+            child: GestureDetector(
           onTapUp: (details) {
             final box = boxContext.findRenderObject() as RenderBox?;
             if (box != null && box.size.width > 0 && box.size.height > 0) {
@@ -324,10 +331,11 @@ class _StudioRecordScreenState extends State<StudioRecordScreen> {
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
-  }
+  },
+);
 
   Widget _buildAudioStudioStage(
       BuildContext context, RecordProvider rec, MicFxProvider mic) {

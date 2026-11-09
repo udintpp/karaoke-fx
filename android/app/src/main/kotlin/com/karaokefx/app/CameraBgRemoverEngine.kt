@@ -115,6 +115,8 @@ class CameraBgRemoverEngine(
     private var imageAnalysisUseCase: ImageAnalysis? = null
     private var orientationEventListener: OrientationEventListener? = null
     private var currentDeviceRotation = Surface.ROTATION_0
+    private var cameraResW = 1280
+    private var cameraResH = 720
 
     var useFrontCamera: Boolean = true
         private set
@@ -229,7 +231,7 @@ class CameraBgRemoverEngine(
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                     .setResolutionStrategy(
                         ResolutionStrategy(
-                            Size(960, 720),
+                            Size(1280, 720),
                             ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
                         )
                     )
@@ -243,6 +245,8 @@ class CameraBgRemoverEngine(
 
                 preview.setSurfaceProvider(ContextCompat.getMainExecutor(context)) { surfaceRequest ->
                     val res = surfaceRequest.resolution
+                    cameraResW = res.width
+                    cameraResH = res.height
                     renderer?.postOnGlThread {
                         renderer?.cameraSurfaceTexture?.setDefaultBufferSize(res.width, res.height)
                     }
@@ -370,6 +374,7 @@ class CameraBgRemoverEngine(
                 tapToFocus(0.5f, 0.42f)
 
                 setupOrientationEventListener()
+                updateOrientation(currentDeviceRotation)
 
                 onBound()
             } catch (e: Exception) {
@@ -380,6 +385,46 @@ class CameraBgRemoverEngine(
     }
 
     var onOrientationChanged: ((Int, Boolean) -> Unit)? = null
+
+    fun updateOrientation(newRotation: Int) {
+        currentDeviceRotation = newRotation
+        val sensorDeg = when (newRotation) {
+            Surface.ROTATION_90 -> 90
+            Surface.ROTATION_180 -> 180
+            Surface.ROTATION_270 -> 270
+            else -> 0
+        }
+        val isLandscape = (sensorDeg == 90 || sensorDeg == 270)
+        val outW = if (isLandscape) 960 else 720
+        val outH = if (isLandscape) 720 else 960
+
+        val netRot = boundCamera?.cameraInfo?.getSensorRotationDegrees(newRotation) ?: run {
+            if (useFrontCamera) (270 + sensorDeg) % 360 else (90 - sensorDeg + 360) % 360
+        }
+
+        renderer?.deviceRotationDegrees = sensorDeg
+        renderer?.rotationDegrees = netRot
+        if (netRot == 90 || netRot == 270) {
+            renderer?.camPortraitW = cameraResH
+            renderer?.camPortraitH = cameraResW
+        } else {
+            renderer?.camPortraitW = cameraResW
+            renderer?.camPortraitH = cameraResH
+        }
+
+        renderer?.updateOutputSize(outW, outH)
+        previewEntry?.surfaceTexture()?.setDefaultBufferSize(outW, outH)
+
+        mainHandler.post {
+            try {
+                previewUseCase?.targetRotation = newRotation
+                imageAnalysisUseCase?.targetRotation = newRotation
+            } catch (e: Exception) {
+                Log.d(TAG, "Update targetRotation error: ${e.message}")
+            }
+            onOrientationChanged?.invoke(sensorDeg, isLandscape)
+        }
+    }
 
     private fun setupOrientationEventListener() {
         if (orientationEventListener != null) return
@@ -397,31 +442,7 @@ class CameraBgRemoverEngine(
                     }
 
                     if (newRotation != currentDeviceRotation) {
-                        currentDeviceRotation = newRotation
-                        val sensorDeg = when (newRotation) {
-                            Surface.ROTATION_90 -> 90
-                            Surface.ROTATION_180 -> 180
-                            Surface.ROTATION_270 -> 270
-                            else -> 0
-                        }
-                        val isLandscape = (sensorDeg == 90 || sensorDeg == 270)
-                        val outW = if (isLandscape) 960 else 720
-                        val outH = if (isLandscape) 720 else 960
-
-                        renderer?.deviceRotationDegrees = sensorDeg
-                        renderer?.outputWidth = outW
-                        renderer?.outputHeight = outH
-                        previewEntry?.surfaceTexture()?.setDefaultBufferSize(outW, outH)
-
-                        mainHandler.post {
-                            try {
-                                previewUseCase?.targetRotation = newRotation
-                                imageAnalysisUseCase?.targetRotation = newRotation
-                            } catch (e: Exception) {
-                                Log.d(TAG, "Update targetRotation error: ${e.message}")
-                            }
-                            onOrientationChanged?.invoke(sensorDeg, isLandscape)
-                        }
+                        updateOrientation(newRotation)
                     }
                 }
             }.apply {
@@ -442,7 +463,10 @@ class CameraBgRemoverEngine(
         useFrontCamera = !useFrontCamera
         renderer?.isFrontCamera = useFrontCamera
         startCameraXWithExistingRenderer(
-            onBound = { onDone(useFrontCamera) },
+            onBound = {
+                updateOrientation(currentDeviceRotation)
+                onDone(useFrontCamera)
+            },
             onFail = onError
         )
     }
